@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,9 +8,42 @@ import JSZip from "jszip";
 import { parseStringPromise } from "xml2js";
 import * as XLSX from "xlsx";
 import Tesseract from "tesseract.js";
+import type { RagDocumentInput } from "@/lib/rag-types";
 
 interface PPTXXLSXSearchProps {
   onBack?: () => void;
+}
+
+async function extractPptxTextForRag(file: File): Promise<string> {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const slideNames = Object.keys(zip.files)
+    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort((left, right) => Number(left.match(/slide(\d+)/)?.[1]) - Number(right.match(/slide(\d+)/)?.[1]));
+
+  const slides: string[] = [];
+  for (const [index, slideName] of slideNames.entries()) {
+    const slideFile = zip.files[slideName];
+    if (!slideFile) continue;
+    const slide = await parseStringPromise(await slideFile.async("string"));
+    const text: string[] = [];
+    const collectText = (value: unknown): void => {
+      if (typeof value === "string") text.push(value);
+      else if (Array.isArray(value)) value.forEach(collectText);
+      else if (value && typeof value === "object") Object.values(value).forEach(collectText);
+    };
+    collectText(slide["p:sld"]);
+    if (text.join(" ").trim()) slides.push(`Slide ${index + 1}: ${text.join(" ")}`);
+  }
+
+  return slides.join("\n\n");
+}
+
+async function extractXlsxTextForRag(file: File): Promise<string> {
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  return workbook.SheetNames.map((sheetName) => {
+    const sheet = workbook.Sheets[sheetName];
+    return `Sheet: ${sheetName}\n${XLSX.utils.sheet_to_csv(sheet)}`;
+  }).join("\n\n");
 }
 
 const PPTXXLSXSearch: React.FC<PPTXXLSXSearchProps> = ({ onBack }) => {
@@ -19,10 +52,6 @@ const PPTXXLSXSearch: React.FC<PPTXXLSXSearchProps> = ({ onBack }) => {
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [aiQuestion, setAiQuestion] = useState("");
-  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
 
   const handleFolderUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -38,6 +67,26 @@ const PPTXXLSXSearch: React.FC<PPTXXLSXSearchProps> = ({ onBack }) => {
       setFiles(Array.from(e.target.files));
     }
   };
+
+  const getRagDocuments = useCallback(async (): Promise<RagDocumentInput[]> => {
+    const documents: RagDocumentInput[] = [];
+    for (const file of files) {
+      const extension = file.name.toLowerCase().split(".").pop();
+      const content = extension === "pptx"
+        ? await extractPptxTextForRag(file)
+        : extension === "xlsx"
+          ? await extractXlsxTextForRag(file)
+          : "";
+      if (content.trim()) {
+        documents.push({
+          id: `${file.name}-${file.lastModified}-${file.size}`,
+          name: file.name,
+          content,
+        });
+      }
+    }
+    return documents;
+  }, [files]);
 
   const handleSearch = async () => {
     setLoading(true);
@@ -136,34 +185,6 @@ const PPTXXLSXSearch: React.FC<PPTXXLSXSearchProps> = ({ onBack }) => {
     }
   };
 
-  // Concatenate all file results for AI context
-  const allFileContents = results.map(r => r.snippet).join("\n\n");
-
-  const handleAISearch = async () => {
-    setAiLoading(true);
-    setAiError(null);
-    setAiAnswer(null);
-    try {
-      const res = await fetch("/api/ai-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: aiQuestion, content: allFileContents }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        setAiError(err.error || "Unknown error");
-        setAiLoading(false);
-        return;
-      }
-      const data = await res.json();
-      setAiAnswer(data.answer);
-    } catch (err: any) {
-      setAiError(err.message || "Error with AI search");
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   return (
     <Tabs defaultValue="search">
       <TabsList className="mb-4">
@@ -257,13 +278,11 @@ const PPTXXLSXSearch: React.FC<PPTXXLSXSearchProps> = ({ onBack }) => {
       </TabsContent>
       <TabsContent value="ai">
         <div className="h-[calc(100vh-300px)]">
-          <AISearchChat 
-            fileContent={allFileContents}
-          />
+          <AISearchChat getDocuments={getRagDocuments} hasDocuments={files.length > 0} />
         </div>
       </TabsContent>
     </Tabs>
   );
 };
 
-export default PPTXXLSXSearch; 
+export default PPTXXLSXSearch;

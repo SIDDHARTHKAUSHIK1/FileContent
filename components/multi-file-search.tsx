@@ -14,6 +14,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import FolderSelector from "@/components/folder-selector"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import AISearchChat from "@/components/ai-search-chat";
+import type { RagDocumentInput } from "@/lib/rag-types"
 
 interface SearchResult {
   file: string
@@ -89,10 +90,7 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
     "jsx",
   ])
   const [showFilters, setShowFilters] = useState(false)
-  const [aiQuestion, setAiQuestion] = useState("");
-  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
+  const [uploadedDocuments, setUploadedDocuments] = useState<RagDocumentInput[]>([])
 
   const fileTypes = [
     { id: "txt", label: "Text", icon: FileText },
@@ -204,34 +202,6 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
     return FILE_TYPE_COLORS[fileType as keyof typeof FILE_TYPE_COLORS] || FILE_TYPE_COLORS.default
   }
 
-  // Concatenate all file contents for AI context
-  const allFileContents = results.map(r => r.matched_text).join("\n\n");
-
-  const handleAISearch = async () => {
-    setAiLoading(true);
-    setAiError(null);
-    setAiAnswer(null);
-    try {
-      const res = await fetch("/api/ai-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: aiQuestion, content: allFileContents }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        setAiError(err.error || "Unknown error");
-        setAiLoading(false);
-        return;
-      }
-      const data = await res.json();
-      setAiAnswer(data.answer);
-    } catch (err: any) {
-      setAiError(err.message || "Error with AI search");
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-background transition-colors duration-300">
       {/* Header */}
@@ -254,7 +224,11 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
             <FolderSelector
               selectedFolder={selectedFolder}
               onFolderSelect={(folderName) => setSelectedFolder(folderName)}
-              onFolderClear={() => setSelectedFolder("")}
+              onFolderClear={() => {
+                setSelectedFolder("")
+                setUploadedDocuments([])
+              }}
+              onDocumentsLoaded={setUploadedDocuments}
             />
           </div>
 
@@ -440,9 +414,7 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
             </TabsContent>
             <TabsContent value="ai">
               <div className="h-[calc(100vh-300px)]">
-                <AISearchChat 
-                  fileContent={allFileContents}
-                />
+                <AISearchChat documents={uploadedDocuments} />
               </div>
             </TabsContent>
           </Tabs>

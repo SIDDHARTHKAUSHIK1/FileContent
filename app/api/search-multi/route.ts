@@ -229,7 +229,7 @@ export async function POST(request: NextRequest) {
           time_taken: endTime - startTime,
           search_directory: "Error",
         },
-        error: `Search failed: ${error.message}`,
+        error: `Search failed: ${error instanceof Error ? error.message : "Unknown error"}`,
       } as ApiResponse,
       { status: 500 },
     )

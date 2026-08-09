@@ -1,33 +1,23 @@
-# 🚀 Deploying to Vercel for FREE (with Gemini AI)
+# Deploying the document AI app to Vercel
 
-Your project has been upgraded to use **Google Gemini 1.5 Flash** instead of running a heavy local AI model (Ollama). This means you can now host the entire application **100% for free** on Vercel without worrying about RAM limits or free trial expirations!
+The app uses NVIDIA NIM for its LangChain RAG pipeline: NVIDIA embeddings retrieve relevant uploaded-document chunks and Nemotron generates a cited answer from those chunks only.
 
-Follow these simple steps:
+## Configure NVIDIA credentials
 
-## Step 1: Get a FREE Google Gemini API Key
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Sign in with your Google Account.
-3. Click on **"Create API Key"**.
-4. Copy the generated API key.
+1. In your Vercel project, open **Settings → Environment Variables**.
+2. Add `NVIDIA_API_KEY` with your NVIDIA Build API key.
+3. Optionally add these values (the app defaults to them already):
 
-## Step 2: Push your code to GitHub
-If you haven't already pushed these new changes to GitHub, do that now:
-```bash
-git add .
-git commit -m "Switched AI backend from Ollama to Gemini for free hosting"
-git push
-```
+   ```env
+   NVIDIA_API_BASE_URL=https://integrate.api.nvidia.com/v1
+   NVIDIA_CHAT_MODEL=nvidia/nemotron-3-ultra-550b-a55b
+   NVIDIA_EMBEDDING_MODEL=nvidia/nv-embedqa-e5-v5
+   ```
 
-## Step 3: Deploy on Vercel
-1. Go to [Vercel](https://vercel.com) and sign in (or sign up using your GitHub account).
-2. Click **"Add New..." > "Project"**.
-3. Import your GitHub repository that contains this project.
-4. **Important Configuration Step:** 
-   - Before clicking Deploy, expand the **"Environment Variables"** section.
-   - For **Key**, type: `GEMINI_API_KEY`
-   - For **Value**, paste the API Key you copied from Google AI Studio.
-   - Click **Add**.
-5. Click **Deploy**.
+4. Redeploy the project.
 
-## What about `docker-compose.yml` and Railway?
-We no longer need Railway, Docker, or `docker-compose.yml` to host the live website. Vercel automatically natively hosts Next.js fast and free! You can ignore those old deployment scripts.
+## Important RAG storage note
+
+The current RAG index is intentionally in memory and is ideal for local use. Vercel functions may use separate instances, so a production Vercel deployment should replace the in-memory vector store with persistent storage such as Pinecone, Qdrant, or PostgreSQL with pgvector.
+
+Vercel is also not the right host for this app's 500 MB local upload path. Use direct browser uploads to object storage (for example S3, R2, or Blob storage), then send the stored file reference to a background indexing worker.

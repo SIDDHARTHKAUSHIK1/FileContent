@@ -11,6 +11,7 @@ import { DocumentParser, type DocumentLayout, type SearchMatch } from "@/lib/doc
 import AdvancedSearch from "@/components/advanced-search"
 import DocumentViewer from "@/components/document-viewer"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import AISearchChat from "@/components/ai-search-chat"
 
 interface WordDocumentSearchProps {
   onBack: () => void
@@ -151,12 +152,22 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
     [searchResults]
   )
 
+  const ragDocuments = useMemo(
+    () => documentLayouts.map(({ fileName, layout }, index) => ({
+      id: `${fileName}-${index}`,
+      name: fileName,
+      content: layout.text,
+    })),
+    [documentLayouts],
+  )
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="container mx-auto max-w-7xl">
         <Tabs defaultValue="search">
           <TabsList className="mb-4">
             <TabsTrigger value="search">Search</TabsTrigger>
+            <TabsTrigger value="ai">Document AI</TabsTrigger>
           </TabsList>
           <TabsContent value="search">
             <div className="mb-6">
@@ -295,6 +306,11 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
                 No files contain the searched keywords.
               </div>
             )}
+          </TabsContent>
+          <TabsContent value="ai">
+            <div className="h-[calc(100vh-180px)]">
+              <AISearchChat documents={ragDocuments} />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

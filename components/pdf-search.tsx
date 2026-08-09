@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import * as pdfjsLib from "pdfjs-dist";
 import Tesseract from "tesseract.js";
 import { Badge } from "@/components/ui/badge";
+import AISearchChat from "@/components/ai-search-chat";
 
 // Use the local worker for offline support
 if (typeof window !== "undefined" && "Worker" in window) {
@@ -126,16 +127,29 @@ const PdfSearch: React.FC<PdfSearchProps> = ({ onBack }) => {
     setResults(matches);
   };
 
+  const ragDocuments = pdfPages.map((page) => ({
+    id: `${page.fileName}-${page.pageNumber}`,
+    name: page.fileName,
+    path: `Page ${page.pageNumber}`,
+    content: page.text,
+  }));
+
   return (
     <div className="min-h-screen bg-background p-4">
-      {onBack && (
-        <div className="mb-4">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-             Back
-          </Button>
-        </div>
-      )}
-      <Card className="hover:shadow-lg transition-shadow flex flex-col h-full">
+      <Tabs defaultValue="search">
+        <TabsList className="mb-4">
+          <TabsTrigger value="search">Search</TabsTrigger>
+          <TabsTrigger value="ai">Document AI</TabsTrigger>
+        </TabsList>
+        <TabsContent value="search">
+          {onBack && (
+            <div className="mb-4">
+              <Button variant="ghost" size="sm" onClick={onBack}>
+                 Back
+              </Button>
+            </div>
+          )}
+          <Card className="hover:shadow-lg transition-shadow flex flex-col h-full">
         <CardHeader>
           <CardTitle className="flex items-center gap-3">
             <div className="p-2 bg-red-100 dark:bg-red-900 rounded-lg">
@@ -217,7 +231,14 @@ const PdfSearch: React.FC<PdfSearchProps> = ({ onBack }) => {
             </div>
           </div>
         </CardContent>
-      </Card>
+          </Card>
+        </TabsContent>
+        <TabsContent value="ai">
+          <div className="h-[calc(100vh-180px)]">
+            <AISearchChat documents={ragDocuments} />
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };

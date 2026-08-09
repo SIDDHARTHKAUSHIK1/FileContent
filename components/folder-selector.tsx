@@ -8,11 +8,13 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { parseWordDocument } from "@/lib/word-parser"
+import type { RagDocumentInput } from "@/lib/rag-types"
 
 interface FolderSelectorProps {
   selectedFolder: string
   onFolderSelect: (folderName: string, folderPath?: string) => void
   onFolderClear: () => void
+  onDocumentsLoaded?: (documents: RagDocumentInput[]) => void
   onAdvancedDocumentProcess?: (file: File) => Promise<void>
 }
 
@@ -36,6 +38,7 @@ export default function FolderSelector({
   selectedFolder,
   onFolderSelect,
   onFolderClear,
+  onDocumentsLoaded,
   onAdvancedDocumentProcess,
 }: FolderSelectorProps) {
   const [isDragOver, setIsDragOver] = useState(false)
@@ -177,6 +180,12 @@ export default function FolderSelector({
                 }
 
                 localStorage.setItem("selectedFiles", JSON.stringify(fileDataArray))
+                onDocumentsLoaded?.(fileDataArray.map((file) => ({
+                  id: `${file.path}-${file.lastModified}`,
+                  name: file.name,
+                  path: file.path,
+                  content: file.content,
+                })))
                 console.log(`Stored ${fileDataArray.length} files with content`)
                 await processForAdvancedSearch(files.slice(0, 100))
               }
@@ -188,7 +197,7 @@ export default function FolderSelector({
       setIsProcessing(false)
       setProcessingStatus("")
     },
-    [onFolderSelect, processForAdvancedSearch],
+    [onDocumentsLoaded, onFolderSelect, processForAdvancedSearch],
   )
 
   const handleFolderSelect = async () => {
@@ -252,6 +261,12 @@ export default function FolderSelector({
         }
 
         localStorage.setItem("selectedFiles", JSON.stringify(fileDataArray))
+        onDocumentsLoaded?.(fileDataArray.map((file) => ({
+          id: `${file.path}-${file.lastModified}`,
+          name: file.name,
+          path: file.path,
+          content: file.content,
+        })))
         console.log(`Stored ${fileDataArray.length} files with content`)
         await processForAdvancedSearch(filesToProcess)
       }
@@ -277,6 +292,7 @@ export default function FolderSelector({
 
   const clearFolder = () => {
     onFolderClear()
+    onDocumentsLoaded?.([])
     setFolderStats(null)
     localStorage.removeItem("selectedFiles")
   }
