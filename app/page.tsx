@@ -1,214 +1,298 @@
 "use client"
 
 import { useState } from "react"
-import { Search, FileText, Code, Zap, ArrowRight } from "lucide-react"
+import { Search, FileText, Code, Zap, ArrowRight, Sparkles, UploadCloud } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import MultiFileSearch from "@/components/multi-file-search"
 import WordDocumentSearch from "@/components/word-document-search"
-import PPTXXLSXSearch from "@/components/pptx-xlsx-search";
-import dynamic from "next/dynamic";
-const PdfSearch = dynamic(() => import("@/components/pdf-search"), { ssr: false });
+import PPTXXLSXSearch from "@/components/pptx-xlsx-search"
+import dynamic from "next/dynamic"
+import { GlobalHeader, type ToolType } from "@/components/global-header"
+import AISearchChat from "@/components/ai-search-chat"
+
+const PdfSearch = dynamic(() => import("@/components/pdf-search"), { ssr: false })
 
 export default function FileSearchTool() {
-  const [selectedTool, setSelectedTool] = useState<"multi" | "word" | "pptx" | "pdf" | null>(null)
-
-  if (selectedTool === "multi") {
-    return <MultiFileSearch onBack={() => setSelectedTool(null)} />
-  }
-
-  if (selectedTool === "word") {
-    return <WordDocumentSearch onBack={() => setSelectedTool(null)} />
-  }
-
-  if (selectedTool === "pptx") {
-    return <PPTXXLSXSearch onBack={() => setSelectedTool(null)} />
-  }
-
-  if (selectedTool === "pdf") {
-    return <PdfSearch onBack={() => setSelectedTool(null)} />
-  }
+  const [selectedTool, setSelectedTool] = useState<ToolType>(null)
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <div className="container mx-auto max-w-7xl">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-4">Content-Based File Search Tools</h1>
-          <p className="text-muted-foreground text-lg">Choose the right search tool for your needs</p>
-        </div>
+    <div className="min-h-screen bg-background flex flex-col">
+      <GlobalHeader currentTool={selectedTool} onSelectTool={setSelectedTool} onBackToHome={() => setSelectedTool(null)} />
 
-        {/* Horizontal layout for all four search sections */}
-        <div className="flex flex-col md:flex-row gap-6 justify-center items-stretch w-full">
-          {/* Multi-File Search Tool */}
-          <div className="flex-1 min-w-[260px] max-w-xs flex flex-col">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer flex-1 flex flex-col" onClick={() => setSelectedTool("multi")}> 
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
-                    <Search className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+      {selectedTool === "multi" && (
+        <div className="flex-1">
+          <MultiFileSearch onBack={() => setSelectedTool(null)} />
+        </div>
+      )}
+
+      {selectedTool === "word" && (
+        <div className="flex-1">
+          <WordDocumentSearch onBack={() => setSelectedTool(null)} />
+        </div>
+      )}
+
+      {selectedTool === "pptx" && (
+        <div className="flex-1">
+          <PPTXXLSXSearch onBack={() => setSelectedTool(null)} />
+        </div>
+      )}
+
+      {selectedTool === "pdf" && (
+        <div className="flex-1">
+          <PdfSearch onBack={() => setSelectedTool(null)} />
+        </div>
+      )}
+
+      {selectedTool === "ai" && (
+        <div className="flex-1 container mx-auto px-4 py-6 max-w-5xl">
+          <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-purple-100 dark:bg-purple-950 rounded-lg text-purple-600 dark:text-purple-400">
+                  <Sparkles className="h-6 w-6 animate-pulse" />
+                </div>
+                <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Universal AI Document Search</h1>
+              </div>
+              <p className="text-muted-foreground mt-1 text-sm">
+                Ask questions across any documents (PDF, DOCX, PPTX, XLSX, Code, Text). Answers are strictly grounded with citations.
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setSelectedTool(null)}>
+              ← Back to Tools
+            </Button>
+          </div>
+
+          <div className="h-[calc(100vh-220px)] min-h-[600px]">
+            <AISearchChat />
+          </div>
+        </div>
+      )}
+
+      {selectedTool === null && (
+        <main className="flex-1 container mx-auto max-w-7xl px-4 py-8 flex flex-col justify-center">
+          {/* Hero Section */}
+          <div className="text-center max-w-3xl mx-auto mb-10">
+            <Badge variant="outline" className="mb-3 px-3 py-1 text-xs border-purple-500/30 text-purple-600 dark:text-purple-400 bg-purple-500/10">
+              ⚡ Multi-Format Document Intelligence & RAG
+            </Badge>
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-3">
+              Content-Based File & AI Search
+            </h1>
+            <p className="text-muted-foreground text-base sm:text-lg">
+              Search inside text, code, Word, PowerPoint, Excel, and PDF files instantly, or use the centralized AI Assistant to query all your documents.
+            </p>
+          </div>
+
+          {/* Spotlight Hero: Universal AI Search Banner Card */}
+          <Card className="mb-8 border-purple-500/30 bg-gradient-to-br from-purple-500/5 via-background to-blue-500/5 shadow-md hover:shadow-xl transition-all duration-300">
+            <CardContent className="p-6 sm:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="space-y-2 flex-1">
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-purple-600 text-white hover:bg-purple-700">
+                    <Sparkles className="h-3 w-3 mr-1" /> Central AI Hub
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">Powered by NVIDIA RAG</span>
+                </div>
+                <h2 className="text-2xl font-bold tracking-tight">
+                  Universal AI Document Assistant
+                </h2>
+                <p className="text-muted-foreground text-sm max-w-2xl">
+                  Upload any mix of files or folders (.pdf, .docx, .pptx, .xlsx, .txt, code up to 500 MB) and ask questions in natural language with source-grounded answers.
+                </p>
+                <div className="flex flex-wrap gap-1.5 pt-2">
+                  {["All-in-One Upload", "Grounded Citations", "Streaming Answers", "Zero Hallucinations"].map((item) => (
+                    <Badge key={item} variant="secondary" className="text-[11px] font-normal">
+                      ✓ {item}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                <Button
+                  size="lg"
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-lg shadow-purple-500/25 px-6"
+                  onClick={() => setSelectedTool("ai")}
+                >
+                  <Sparkles className="h-5 w-5 mr-2 animate-pulse" />
+                  Launch AI Search
+                  <ArrowRight className="h-4 w-4 ml-2" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Section Divider */}
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold tracking-tight">Targeted Format Search Tools</h3>
+            <p className="text-xs text-muted-foreground">Keyword & regex search tailored to specific file formats</p>
+          </div>
+
+          {/* 4 Search Tool Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Multi-File Search */}
+            <Card
+              className="hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col group border hover:border-blue-500/40"
+              onClick={() => setSelectedTool("multi")}
+            >
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="p-2.5 bg-blue-100 dark:bg-blue-900/50 rounded-xl text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform">
+                    <Search className="h-5 w-5" />
                   </div>
                   Multi-File Search
                 </CardTitle>
+                <CardDescription className="text-xs">Code & text directory search</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4 flex-1 flex flex-col justify-between">
+              <CardContent className="space-y-4 flex-1 flex flex-col justify-between pt-0">
                 <div>
-                  <p className="text-muted-foreground mb-3">
-                    Search across multiple programming and text files in your project directories.
+                  <p className="text-muted-foreground text-xs mb-3">
+                    Fast scanning across Python, Java, JS, TS, HTML, JSON, CSV and markdown.
                   </p>
-                  <h4 className="font-medium mb-2">Supported File Types:</h4>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {[{ name: "Python", color: "bg-green-100 text-green-800" }, { name: "Java", color: "bg-red-100 text-red-800" }, { name: "JavaScript", color: "bg-yellow-100 text-yellow-800" }, { name: "TypeScript", color: "bg-blue-100 text-blue-800" }, { name: "HTML", color: "bg-orange-100 text-orange-800" }, { name: "JSON", color: "bg-purple-100 text-purple-800" }, { name: "Text", color: "bg-gray-100 text-gray-800" }, { name: "CSV", color: "bg-teal-100 text-teal-800" }].map((type) => (
-                      <Badge key={type.name} className={type.color} variant="secondary">
-                        {type.name}
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {["Python", "Java", "JS/TS", "HTML", "JSON", "CSV"].map((type) => (
+                      <Badge key={type} className="text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20" variant="outline">
+                        {type}
                       </Badge>
                     ))}
                   </div>
-                  <h4 className="font-medium mb-2">Features:</h4>
-                  <ul className="text-sm text-muted-foreground space-y-1">
-                    <li>• Search across entire project directories</li>
+                  <ul className="text-xs text-muted-foreground space-y-1">
                     <li>• Line number detection</li>
-                    <li>• Case sensitive options</li>
-                    <li>• File type filtering</li>
-                    <li>• Fast bulk search</li>
+                    <li>• Case-sensitive & regex options</li>
+                    <li>• File extension filters</li>
                   </ul>
                 </div>
-                <Button className="w-full mt-4" onClick={e => { e.stopPropagation(); setSelectedTool("multi") }}> 
+                <Button variant="outline" className="w-full mt-4 group-hover:bg-blue-600 group-hover:text-white transition-colors" onClick={(e) => { e.stopPropagation(); setSelectedTool("multi") }}>
                   <Code className="h-4 w-4 mr-2" />
-                  Use Multi-File Search
-                  <ArrowRight className="h-4 w-4 ml-2" />
+                  Open Multi-File
+                  <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
               </CardContent>
             </Card>
-          </div>
 
-          {/* Word Document Search Tool */}
-          <div className="flex-1 min-w-[260px] max-w-xs flex flex-col">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer flex-1 flex flex-col" onClick={() => setSelectedTool("word")}> 
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <div className="p-2 bg-yellow-100 dark:bg-yellow-900 rounded-lg">
-                    <Zap className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
+            {/* Word Document Search */}
+            <Card
+              className="hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col group border hover:border-yellow-500/40"
+              onClick={() => setSelectedTool("word")}
+            >
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="p-2.5 bg-yellow-100 dark:bg-yellow-900/50 rounded-xl text-yellow-600 dark:text-yellow-400 group-hover:scale-105 transition-transform">
+                    <Zap className="h-5 w-5" />
                   </div>
-                  Word Document Search
+                  Word Search
                 </CardTitle>
+                <CardDescription className="text-xs">DOCX & DOC document analysis</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4 flex-1 flex flex-col justify-between">
+              <CardContent className="space-y-4 flex-1 flex flex-col justify-between pt-0">
                 <div>
-                  <p className="text-muted-foreground mb-3">
-                    Advanced Microsoft Word-like search with accurate page detection and document structure analysis.
+                  <p className="text-muted-foreground text-xs mb-3">
+                    Accurate page calculation, section & heading recognition with previewer.
                   </p>
-                  <h4 className="font-medium mb-2">Supported Formats:</h4>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    {[{ name: ".docx", color: "bg-blue-100 text-blue-800" }, { name: ".doc", color: "bg-blue-200 text-blue-900" }, { name: "", color: "bg-gray-100 text-gray-800" }].map((type) => (
-                      <Badge key={type.name} className={type.color} variant="secondary">
-                        {type.name}
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {[".docx", ".doc"].map((type) => (
+                      <Badge key={type} className="text-[10px] bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20" variant="outline">
+                        {type}
                       </Badge>
                     ))}
                   </div>
-                  <h4 className="font-medium mb-2">Advanced Features:</h4>
-                  <ul className="text-sm text-muted-foreground space-y-1">
-                    <li>• Accurate page number detection</li>
-                    <li>• Section and heading recognition</li>
-                    <li>• Context snippets with highlighting</li>
-                    <li>• Wildcards and regex support</li>
-                    <li>• Document structure analysis</li>
-                    <li>• Word-like search experience</li>
+                  <ul className="text-xs text-muted-foreground space-y-1">
+                    <li>• Page & section mapping</li>
+                    <li>• Embedded image OCR</li>
+                    <li>• Context snippets & match jumps</li>
                   </ul>
                 </div>
-                <Button className="w-full mt-4" onClick={e => { e.stopPropagation(); setSelectedTool("word") }}> 
+                <Button variant="outline" className="w-full mt-4 group-hover:bg-yellow-600 group-hover:text-white transition-colors" onClick={(e) => { e.stopPropagation(); setSelectedTool("word") }}>
                   <FileText className="h-4 w-4 mr-2" />
-                  Use Word Document Search
-                  <ArrowRight className="h-4 w-4 ml-2" />
+                  Open Word Search
+                  <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
               </CardContent>
             </Card>
-          </div>
 
-          {/* PPTX & XLSX Search Tool */}
-          <div className="flex-1 min-w-[260px] max-w-xs flex flex-col">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer flex-1 flex flex-col">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-lg">
-                    <span role="img" aria-label="pptx-xlsx" className="text-purple-600 dark:text-purple-400 text-2xl">📊</span>
+            {/* PPTX & XLSX Search */}
+            <Card
+              className="hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col group border hover:border-purple-500/40"
+              onClick={() => setSelectedTool("pptx")}
+            >
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="p-2.5 bg-purple-100 dark:bg-purple-900/50 rounded-xl text-purple-600 dark:text-purple-400 group-hover:scale-105 transition-transform">
+                    <span className="text-lg">📊</span>
                   </div>
-                  PPTX & XLSX Search
+                  PPTX & XLSX
                 </CardTitle>
+                <CardDescription className="text-xs">Slide decks & spreadsheets</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4 flex-1 flex flex-col justify-between">
+              <CardContent className="space-y-4 flex-1 flex flex-col justify-between pt-0">
                 <div>
-                  <p className="text-muted-foreground mb-3">
-                    Search inside Microsoft PowerPoint and Excel files. Upload a folder of .pptx or .xlsx files and find content instantly. You can also ask questions in the AI tab.
+                  <p className="text-muted-foreground text-xs mb-3">
+                    Search slides, tables, sheets, charts and extract text across workbooks.
                   </p>
-                  <h4 className="font-medium mb-2">Supported Formats:</h4>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    <Badge className="bg-purple-100 text-purple-800" variant="secondary">.pptx</Badge>
-                    <Badge className="bg-green-100 text-green-800" variant="secondary">.xlsx</Badge>
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {[".pptx", ".xlsx", ".xls"].map((type) => (
+                      <Badge key={type} className="text-[10px] bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20" variant="outline">
+                        {type}
+                      </Badge>
+                    ))}
                   </div>
-                  <h4 className="font-medium mb-2">Features:</h4>
-                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                    <li>Search inside individual slides and sheets</li>
-                    <li>Upload and index entire folders</li>
-                    <li>Extract and search text from charts and tables</li>
-                    <li>Context snippets for matches</li>
-                    <li>Fast, simple keyword search</li>
+                  <ul className="text-xs text-muted-foreground space-y-1">
+                    <li>• Slide-by-slide XML indexing</li>
+                    <li>• Multi-sheet CSV flattening</li>
+                    <li>• Embedded visual OCR</li>
                   </ul>
                 </div>
-                <Button className="w-full mt-4" onClick={e => { e.stopPropagation(); setSelectedTool("pptx") }}> 
+                <Button variant="outline" className="w-full mt-4 group-hover:bg-purple-600 group-hover:text-white transition-colors" onClick={(e) => { e.stopPropagation(); setSelectedTool("pptx") }}>
                   <span className="mr-2">📊</span>
-                  Use PPTX & XLSX Search
-                  <ArrowRight className="h-4 w-4 ml-2" />
+                  Open PPTX / XLSX
+                  <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
               </CardContent>
             </Card>
-          </div>
 
-          {/* PDF Search Tool */}
-          <div className="flex-1 min-w-[260px] max-w-xs flex flex-col">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer flex-1 flex flex-col">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <div className="p-2 bg-red-100 dark:bg-red-900 rounded-lg">
-                    <span role="img" aria-label="pdf" className="text-red-600 dark:text-red-400 text-2xl">📄</span>
+            {/* PDF Search */}
+            <Card
+              className="hover:shadow-lg transition-all duration-200 cursor-pointer flex flex-col group border hover:border-red-500/40"
+              onClick={() => setSelectedTool("pdf")}
+            >
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-3 text-lg">
+                  <div className="p-2.5 bg-red-100 dark:bg-red-900/50 rounded-xl text-red-600 dark:text-red-400 group-hover:scale-105 transition-transform">
+                    <span className="text-lg">📄</span>
                   </div>
                   PDF Search
                 </CardTitle>
+                <CardDescription className="text-xs">PDF documents & scanned OCR</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4 flex-1 flex flex-col justify-between">
+              <CardContent className="space-y-4 flex-1 flex flex-col justify-between pt-0">
                 <div>
-                  <p className="text-muted-foreground mb-3">
-                    Upload PDF files or folders and search their content instantly.
+                  <p className="text-muted-foreground text-xs mb-3">
+                    Extract text, metadata, and perform full-page OCR for scanned PDFs.
                   </p>
-                  <h4 className="font-medium mb-2">Supported Formats:</h4>
-                  <div className="flex flex-wrap gap-1 mb-2">
-                    <Badge className="bg-red-100 text-red-800" variant="secondary">.pdf</Badge>
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {[".pdf"].map((type) => (
+                      <Badge key={type} className="text-[10px] bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20" variant="outline">
+                        {type}
+                      </Badge>
+                    ))}
                   </div>
-                  <h4 className="font-medium mb-2">Features:</h4>
-                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                    <li>OCR support for scanned PDFs</li>
-                    <li>Accurate text and table extraction</li>
-                    <li>Search document metadata</li>
-                    <li>Analyze table of contents structure</li>
-                    <li>Semantic search capabilities</li>
+                  <ul className="text-xs text-muted-foreground space-y-1">
+                    <li>• Page-by-page text parsing</li>
+                    <li>• Scanned image OCR engine</li>
+                    <li>• Context snippet highlighting</li>
                   </ul>
                 </div>
-                <Button className="w-full mt-4" onClick={e => { e.stopPropagation(); setSelectedTool("pdf") }}> 
+                <Button variant="outline" className="w-full mt-4 group-hover:bg-red-600 group-hover:text-white transition-colors" onClick={(e) => { e.stopPropagation(); setSelectedTool("pdf") }}>
                   <span className="mr-2">📄</span>
-                  Use PDF Search
-                  <ArrowRight className="h-4 w-4 ml-2" />
+                  Open PDF Search
+                  <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
               </CardContent>
             </Card>
           </div>
-        </div>
-
-        <div className="text-center mt-8">
-          <p className="text-sm text-muted-foreground">
-            Each tool is optimized for its specific use case to provide the most accurate results
-          </p>
-        </div>
-      </div>
+        </main>
+      )}
     </div>
   )
 }

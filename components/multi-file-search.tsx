@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, FileText, File, Code, Loader2, Moon, Sun, AlertCircle, Info, ArrowLeft } from "lucide-react"
+import { Search, FileText, File, Code, Loader2, Moon, Sun, AlertCircle, Info, ArrowLeft, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,8 +12,8 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import FolderSelector from "@/components/folder-selector"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import AISearchChat from "@/components/ai-search-chat";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import AISearchChat from "@/components/ai-search-chat"
 import type { RagDocumentInput } from "@/lib/rag-types"
 
 interface SearchResult {
@@ -108,7 +108,7 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
 
   const allowedExts = [
     "txt", "md", "html", "js", "jsx", "ts", "tsx", "py", "json", "csv", "java"
-  ];
+  ]
 
   useEffect(() => {
     if (darkMode) {
@@ -133,16 +133,16 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
 
       // Check for unsupported file formats
       const unsupported = selectedFiles.some((file: any) => {
-        const ext = file.name.toLowerCase().split(".").pop();
-        return !allowedExts.includes(ext || "");
-      });
+        const ext = file.name.toLowerCase().split(".").pop()
+        return !allowedExts.includes(ext || "")
+      })
       if (unsupported) {
-        setError("Unsupported File Format");
-        setResults([]);
-        setStats(null);
-        setDebugInfo([]);
-        setLoading(false);
-        return;
+        setError("Unsupported File Format")
+        setResults([])
+        setStats(null)
+        setDebugInfo([])
+        setLoading(false)
+        return
       }
 
       const response = await fetch("/api/search-multi", {
@@ -304,7 +304,10 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
           <Tabs defaultValue="search">
             <TabsList className="mb-4">
               <TabsTrigger value="search">Search</TabsTrigger>
-              <TabsTrigger value="ai">AI Search</TabsTrigger>
+              <TabsTrigger value="ai" className="flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4 text-purple-500" />
+                AI Search
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="search">
               {error && (
