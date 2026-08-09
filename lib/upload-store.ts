@@ -1,8 +1,9 @@
 import { mkdir, readFile, rm, writeFile } from "fs/promises"
 import path from "path"
+import os from "os"
 
 export const MAX_UPLOAD_BYTES = 500 * 1024 * 1024
-const UPLOAD_ROOT = path.join(process.cwd(), ".data", "uploads")
+const UPLOAD_ROOT = process.env.UPLOAD_DIR || path.join(os.tmpdir(), "file-content-tracker-uploads")
 
 export interface StoredUploadFile {
   id: string
@@ -35,6 +36,7 @@ export async function createUploadDirectory(uploadId: string) {
 
 export async function saveUploadSession(session: UploadSession) {
   const directory = getUploadDirectory(session.id)
+  await mkdir(directory, { recursive: true })
   await writeFile(path.join(directory, "manifest.json"), JSON.stringify(session), "utf8")
 }
 

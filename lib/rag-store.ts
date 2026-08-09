@@ -28,8 +28,6 @@ type IndexedCorpus = {
   createdAt: number
 }
 
-const corpora = new Map<string, IndexedCorpus>()
-
 export type RagIndexJob = {
   jobId: string
   uploadId: string
@@ -45,8 +43,25 @@ export type RagIndexJob = {
   createdAt: number
 }
 
-const indexingJobs = new Map<string, RagIndexJob>()
-const uploadJobs = new Map<string, string>()
+type GlobalRagStore = {
+  corpora: Map<string, IndexedCorpus>
+  indexingJobs: Map<string, RagIndexJob>
+  uploadJobs: Map<string, string>
+}
+
+const globalForRag = globalThis as unknown as {
+  __ragStore?: GlobalRagStore
+}
+
+if (!globalForRag.__ragStore) {
+  globalForRag.__ragStore = {
+    corpora: new Map<string, IndexedCorpus>(),
+    indexingJobs: new Map<string, RagIndexJob>(),
+    uploadJobs: new Map<string, string>(),
+  }
+}
+
+const { corpora, indexingJobs, uploadJobs } = globalForRag.__ragStore
 
 export function hasRagApiKey(): boolean {
   return hasNvidiaApiKey()
