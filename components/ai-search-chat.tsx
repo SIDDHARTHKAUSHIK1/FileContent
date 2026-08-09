@@ -1,10 +1,11 @@
 "use client"
 
-import React, { useRef, useState } from "react"
-import { Bot, FileText, Loader2, Send, Sparkles, Upload, User } from "lucide-react"
+import React, { useEffect, useRef, useState } from "react"
+import { Bot, FileText, Key, Loader2, Send, Sparkles, Upload, User, Check, AlertCircle } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import type { RagDocumentInput, RagSource } from "@/lib/rag-types"
 
 interface Message {
@@ -76,8 +77,42 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
   const [largeUpload, setLargeUpload] = useState<LargeUploadSession | null>(null)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  
+  // Custom API key management (stored in localStorage for Vercel/client-side users)
+  const [apiKey, setApiKey] = useState("")
+  const [showKeyInput, setShowKeyInput] = useState(false)
+  const [keySaved, setKeySaved] = useState(false)
+
   const indexRef = useRef<IndexedCorpus | null>(null)
   const uploadInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const saved = localStorage.getItem("nvidia_api_key") || ""
+    if (saved) setApiKey(saved)
+  }, [])
+
+  const saveCustomKey = (key: string) => {
+    const clean = key.trim()
+    setApiKey(clean)
+    if (clean) {
+      localStorage.setItem("nvidia_api_key", clean)
+    } else {
+      localStorage.removeItem("nvidia_api_key")
+    }
+    setKeySaved(true)
+    setTimeout(() => setKeySaved(false), 2500)
+    setShowKeyInput(false)
+    setError(null)
+  }
+
+  const getAuthHeaders = (): Record<string, string> => {
+    const headers: Record<string, string> = { "Content-Type": "application/json" }
+    const activeKey = apiKey.trim() || (typeof window !== "undefined" ? localStorage.getItem("nvidia_api_key") || "" : "")
+    if (activeKey) {
+      headers["x-nvidia-api-key"] = activeKey
+    }
+    return headers
+  }
 
   const loadDocuments = async () => {
     const loadedDocuments = getDocuments ? await getDocuments() : documents
@@ -93,11 +128,14 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
     setIndexStatus("Indexing uploaded documents for retrieval…")
     const response = await fetch("/api/rag/index", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ documents: uploadedDocuments }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ documents: uploadedDocuments, apiKey: apiKey.trim() || undefined }),
     })
     const data = await response.json()
     if (!response.ok) {
+      if (data.error?.includes("NVIDIA_API_KEY")) {
+        setShowKeyInput(true)
+      }
       throw new Error(data.error || "Unable to index the uploaded documents.")
     }
 
@@ -118,11 +156,16 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
     setIndexStatus("Starting server-side indexing for the uploaded files…")
     const startResponse = await fetch("/api/rag/index", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ uploadId: session.uploadId }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ uploadId: session.uploadId, apiKey: apiKey.trim() || undefined }),
     })
     let job = (await startResponse.json()) as UploadIndexJob
-    if (!startResponse.ok) throw new Error(job.error || "Unable to start document indexing.")
+    if (!startResponse.ok) {
+      if (job.error?.includes("NVIDIA_API_KEY")) {
+        setShowKeyInput(true)
+      }
+      throw new Error(job.error || "Unable to start document indexing.")
+    }
 
     while (job.status === "indexing") {
       setIndexStatus(`Indexing ${job.processedFiles}/${job.fileCount} files${job.currentFile ? `: ${job.currentFile}` : ""} (${job.chunkCount} chunks)…`)
@@ -133,6 +176,9 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
     }
 
     if (job.status === "failed" || !job.indexId) {
+      if (job.error?.includes("NVIDIA_API_KEY")) {
+        setShowKeyInput(true)
+      }
       throw new Error(job.error || "The uploaded files could not be indexed.")
     }
 
@@ -160,7 +206,7 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
     setError(null)
     setIsUploading(true)
     setUploadProgress(0)
-    setIndexStatus("Uploading files securely to the local processing queue…")
+    setIndexStatus("Uploading files securely to processing queue…")
 
     try {
       const session = await new Promise<LargeUploadSession>((resolve, reject) => {
@@ -230,14 +276,18 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
             if (uploadedDocuments.length === 0) throw new Error("Upload a readable document before asking the AI.")
             return ensureIndex(uploadedDocuments)
           })()
+
       const response = await fetch("/api/ai-search", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, indexId, stream: true }),
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ question, indexId, stream: true, apiKey: apiKey.trim() || undefined }),
       })
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
+        if (data.error?.includes("NVIDIA_API_KEY")) {
+          setShowKeyInput(true)
+        }
         throw new Error(data.error || `HTTP ${response.status}`)
       }
 
@@ -285,6 +335,9 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
       if (streamError) throw new Error(streamError)
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : "Failed to answer from the uploaded documents."
+      if (message.includes("NVIDIA_API_KEY")) {
+        setShowKeyInput(true)
+      }
       setError(message)
       setMessages((current) => [
         ...current,
@@ -318,10 +371,54 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">RAG enabled — answers are restricted to your uploaded documents.</p>
           </div>
-          <Button variant="outline" size="sm" onClick={clearChat}>
-            Clear
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={showKeyInput ? "secondary" : "outline"}
+              size="sm"
+              className="text-xs flex items-center gap-1"
+              onClick={() => setShowKeyInput(!showKeyInput)}
+            >
+              <Key className="h-3.5 w-3.5 text-purple-500" />
+              <span>{apiKey ? "API Key Set" : "Configure API Key"}</span>
+            </Button>
+            <Button variant="outline" size="sm" onClick={clearChat}>
+              Clear
+            </Button>
+          </div>
         </div>
+
+        {/* Inline API Key Configuration Card */}
+        {showKeyInput && (
+          <div className="mt-3 p-3.5 rounded-lg border border-purple-500/30 bg-purple-50/50 dark:bg-purple-950/20 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-purple-900 dark:text-purple-300 flex items-center gap-1.5">
+                <Key className="h-3.5 w-3.5 text-purple-600" />
+                NVIDIA API Key Configuration
+              </span>
+              {apiKey && (
+                <span className="text-[11px] text-green-600 dark:text-green-400 flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Saved locally
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Enter your NVIDIA API Key (e.g. <code className="bg-muted px-1 rounded">nvapi-...</code>). Saved in your browser so you don't need to rebuild Vercel.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                placeholder="nvapi-..."
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                className="h-8 text-xs font-mono"
+              />
+              <Button size="sm" className="h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white" onClick={() => saveCustomKey(apiKey)}>
+                Save Key
+              </Button>
+            </div>
+          </div>
+        )}
+
         {indexStatus && <Badge variant="secondary" className="mt-3 w-fit font-normal">{indexStatus}</Badge>}
       </CardHeader>
 
@@ -330,7 +427,7 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-sm font-medium">Large-document upload</p>
-              <p className="text-xs text-muted-foreground">Upload up to 500 MB total. Files are streamed to local disk, then indexed in batches.</p>
+              <p className="text-xs text-muted-foreground">Upload up to 500 MB total. Files are streamed and indexed in batches.</p>
             </div>
             <input
               ref={uploadInputRef}
@@ -345,6 +442,7 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
             </Button>
           </div>
         </div>
+
         <div className="flex-1 overflow-y-auto px-4" style={{ maxHeight: 400 }}>
           <div className="space-y-4 pb-4">
             {messages.length === 0 && (
@@ -403,7 +501,16 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
             />
             <Button type="submit" disabled={isLoading || !inputValue.trim() || !canAsk} size="sm"><Send className="h-4 w-4" /></Button>
           </form>
-          {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+          {error && (
+            <div className="mt-2 text-xs text-red-600 flex items-center justify-between">
+              <span>{error}</span>
+              {error.includes("NVIDIA_API_KEY") && (
+                <Button variant="link" size="sm" className="h-auto p-0 text-xs text-purple-600 underline" onClick={() => setShowKeyInput(true)}>
+                  Enter API Key Now
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

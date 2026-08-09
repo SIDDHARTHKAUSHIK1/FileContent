@@ -37,11 +37,14 @@ function validateGroundedAnswer(answer: string, sourceCount: number) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { question, indexId, stream = false } = (await request.json()) as {
+    const headerKey = request.headers.get("x-nvidia-api-key") || undefined
+    const { question, indexId, stream = false, apiKey } = (await request.json()) as {
       question?: string
       indexId?: string
       stream?: boolean
+      apiKey?: string
     }
+    const effectiveApiKey = headerKey || apiKey
 
     if (!question?.trim()) {
       return NextResponse.json({ error: "Question is required." }, { status: 400 })
@@ -51,16 +54,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Upload and index documents before asking a question." }, { status: 400 })
     }
 
-    if (!hasRagApiKey()) {
+    if (!hasRagApiKey(effectiveApiKey)) {
       return NextResponse.json(
-        { error: "NVIDIA_API_KEY is not set. Add it to .env.local before using document AI search." },
+        { error: "NVIDIA_API_KEY is not set. Please add it in Vercel Project Settings or enter it in the AI settings." },
         { status: 500 },
       )
     }
 
     const { context, sources } = await retrieveDocumentContext(indexId, question.trim())
     const prompt = buildPrompt(question.trim(), context)
-    const answer = validateGroundedAnswer(await generateNvidiaAnswer(prompt), sources.length)
+    const rawAnswer = await generateNvidiaAnswer(prompt, effectiveApiKey)
+    const answer = validateGroundedAnswer(rawAnswer, sources.length)
 
     if (!stream) return NextResponse.json({ answer, sources })
 

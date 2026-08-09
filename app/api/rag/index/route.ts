@@ -7,12 +7,15 @@ export const dynamic = "force-dynamic"
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as { documents?: RagDocumentInput[]; uploadId?: string }
+    const headerKey = request.headers.get("x-nvidia-api-key") || undefined
+    const body = (await request.json()) as { documents?: RagDocumentInput[]; uploadId?: string; apiKey?: string }
+    const effectiveApiKey = headerKey || body.apiKey
+
     if (body.uploadId) {
-      const job = await startUploadedIndex(body.uploadId)
+      const job = await startUploadedIndex(body.uploadId, effectiveApiKey)
       return NextResponse.json(job, { status: job.status === "complete" ? 200 : 202 })
     }
-    const index = await indexDocuments(body.documents ?? [])
+    const index = await indexDocuments(body.documents ?? [], effectiveApiKey)
     return NextResponse.json(index)
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to index uploaded documents."

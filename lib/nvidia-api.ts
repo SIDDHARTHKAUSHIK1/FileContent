@@ -16,17 +16,21 @@ type NvidiaEmbeddingResponse = {
   data?: Array<{ index: number; embedding: number[] }>
 }
 
-export function getNvidiaApiKey(): string | undefined {
-  return process.env.NVIDIA_API_KEY
+export function getNvidiaApiKey(overrideKey?: string): string | undefined {
+  const cleanOverride = overrideKey?.trim()
+  if (cleanOverride) return cleanOverride
+  return process.env.NVIDIA_API_KEY || process.env.NEXT_PUBLIC_NVIDIA_API_KEY
 }
 
-export function hasNvidiaApiKey(): boolean {
-  return Boolean(getNvidiaApiKey())
+export function hasNvidiaApiKey(overrideKey?: string): boolean {
+  return Boolean(getNvidiaApiKey(overrideKey))
 }
 
-function authorizationHeaders() {
-  const apiKey = getNvidiaApiKey()
-  if (!apiKey) throw new Error("NVIDIA_API_KEY is not set. Add it to .env.local before using document AI search.")
+function authorizationHeaders(apiKeyOverride?: string) {
+  const apiKey = getNvidiaApiKey(apiKeyOverride)
+  if (!apiKey) {
+    throw new Error("NVIDIA_API_KEY is not set. Add it in Vercel Project Settings -> Environment Variables or enter it in the app settings.")
+  }
 
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -34,10 +38,10 @@ function authorizationHeaders() {
   }
 }
 
-async function nvidiaRequest<T>(path: string, body: Record<string, unknown>): Promise<T> {
+async function nvidiaRequest<T>(path: string, body: Record<string, unknown>, apiKeyOverride?: string): Promise<T> {
   const response = await fetch(`${NVIDIA_API_BASE_URL}${path}`, {
     method: "POST",
-    headers: authorizationHeaders(),
+    headers: authorizationHeaders(apiKeyOverride),
     body: JSON.stringify(body),
   })
 
@@ -49,15 +53,19 @@ async function nvidiaRequest<T>(path: string, body: Record<string, unknown>): Pr
   return response.json() as Promise<T>
 }
 
-export async function generateNvidiaAnswer(prompt: string): Promise<string> {
-  const data = await nvidiaRequest<NvidiaChatResponse>("/chat/completions", {
-    model: process.env.NVIDIA_CHAT_MODEL || DEFAULT_CHAT_MODEL,
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0,
-    top_p: 0.95,
-    max_tokens: 2_048,
-    chat_template_kwargs: { enable_thinking: false },
-  })
+export async function generateNvidiaAnswer(prompt: string, apiKeyOverride?: string): Promise<string> {
+  const data = await nvidiaRequest<NvidiaChatResponse>(
+    "/chat/completions",
+    {
+      model: process.env.NVIDIA_CHAT_MODEL || DEFAULT_CHAT_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0,
+      top_p: 0.95,
+      max_tokens: 2_048,
+      chat_template_kwargs: { enable_thinking: false },
+    },
+    apiKeyOverride,
+  )
 
   const content = data.choices?.[0]?.message?.content
   if (typeof content === "string" && content.trim()) return content
@@ -71,10 +79,12 @@ export async function generateNvidiaAnswer(prompt: string): Promise<string> {
 
 export class NvidiaEmbeddings extends Embeddings {
   private readonly model: string
+  private readonly apiKey?: string
 
-  constructor() {
+  constructor(fields?: { apiKey?: string }) {
     super({ maxConcurrency: 2, maxRetries: 2 })
     this.model = process.env.NVIDIA_EMBEDDING_MODEL || DEFAULT_EMBEDDING_MODEL
+    this.apiKey = fields?.apiKey
   }
 
   async embedDocuments(documents: string[]): Promise<number[][]> {
@@ -83,11 +93,15 @@ export class NvidiaEmbeddings extends Embeddings {
 
     for (let start = 0; start < documents.length; start += batchSize) {
       const batch = documents.slice(start, start + batchSize)
-      const data = await nvidiaRequest<NvidiaEmbeddingResponse>("/embeddings", {
-        model: this.model,
-        input: batch,
-        input_type: "passage",
-      })
+      const data = await nvidiaRequest<NvidiaEmbeddingResponse>(
+        "/embeddings",
+        {
+          model: this.model,
+          input: batch,
+          input_type: "passage",
+        },
+        this.apiKey,
+      )
       const orderedEmbeddings = (data.data || []).sort((left, right) => left.index - right.index).map((item) => item.embedding)
       if (orderedEmbeddings.length !== batch.length) {
         throw new Error("NVIDIA returned an incomplete embedding response.")
@@ -99,11 +113,15 @@ export class NvidiaEmbeddings extends Embeddings {
   }
 
   async embedQuery(question: string): Promise<number[]> {
-    const data = await nvidiaRequest<NvidiaEmbeddingResponse>("/embeddings", {
-      model: this.model,
-      input: [question],
-      input_type: "query",
-    })
+    const data = await nvidiaRequest<NvidiaEmbeddingResponse>(
+      "/embeddings",
+      {
+        model: this.model,
+        input: [question],
+        input_type: "query",
+      },
+      this.apiKey,
+    )
     const embedding = data.data?.[0]?.embedding
     if (!embedding) throw new Error("NVIDIA returned an empty query embedding.")
     return embedding

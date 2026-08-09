@@ -63,8 +63,8 @@ if (!globalForRag.__ragStore) {
 
 const { corpora, indexingJobs, uploadJobs } = globalForRag.__ragStore
 
-export function hasRagApiKey(): boolean {
-  return hasNvidiaApiKey()
+export function hasRagApiKey(overrideKey?: string): boolean {
+  return hasNvidiaApiKey(overrideKey)
 }
 
 function removeExpiredCorpora() {
@@ -125,9 +125,9 @@ function prepareDocuments(documents: RagDocumentInput[]) {
   return prepared
 }
 
-export async function indexDocuments(documents: RagDocumentInput[]) {
-  if (!hasRagApiKey()) {
-    throw new Error("NVIDIA_API_KEY is not set. Add it to .env.local before using document AI search.")
+export async function indexDocuments(documents: RagDocumentInput[], apiKeyOverride?: string) {
+  if (!hasRagApiKey(apiKeyOverride)) {
+    throw new Error("NVIDIA_API_KEY is not set. Add it in Vercel Project Settings or enter it in the AI search settings.")
   }
 
   removeExpiredCorpora()
@@ -142,7 +142,7 @@ export async function indexDocuments(documents: RagDocumentInput[]) {
     chunk.metadata.chunk = index + 1
   })
 
-  const embeddings = new NvidiaEmbeddings()
+  const embeddings = new NvidiaEmbeddings({ apiKey: apiKeyOverride })
   const vectorStore = await MemoryVectorStore.fromDocuments(chunks, embeddings)
   const indexId = randomUUID()
 
@@ -240,12 +240,12 @@ async function addDocumentBatch(vectorStore: MemoryVectorStore, batch: Document[
   job.chunkCount += batch.length
 }
 
-async function indexUploadedSession(job: RagIndexJob, session: UploadSession) {
-  if (!hasRagApiKey()) {
-    throw new Error("NVIDIA_API_KEY is not set. Add it to .env.local before using document AI search.")
+async function indexUploadedSession(job: RagIndexJob, session: UploadSession, apiKeyOverride?: string) {
+  if (!hasRagApiKey(apiKeyOverride)) {
+    throw new Error("NVIDIA_API_KEY is not set. Add it in Vercel Project Settings or enter it in the AI search settings.")
   }
 
-  const vectorStore = new MemoryVectorStore(new NvidiaEmbeddings())
+  const vectorStore = new MemoryVectorStore(new NvidiaEmbeddings({ apiKey: apiKeyOverride }))
   const splitter = new RecursiveCharacterTextSplitter({ chunkSize: STREAM_CHUNK_SIZE, chunkOverlap: STREAM_CHUNK_OVERLAP })
   let chunkNumber = 0
 
@@ -293,7 +293,7 @@ async function indexUploadedSession(job: RagIndexJob, session: UploadSession) {
   job.currentFile = undefined
 }
 
-export async function startUploadedIndex(uploadId: string): Promise<RagIndexJob> {
+export async function startUploadedIndex(uploadId: string, apiKeyOverride?: string): Promise<RagIndexJob> {
   removeExpiredCorpora()
   const existingJobId = uploadJobs.get(uploadId)
   if (existingJobId) {
@@ -316,7 +316,7 @@ export async function startUploadedIndex(uploadId: string): Promise<RagIndexJob>
   indexingJobs.set(job.jobId, job)
   uploadJobs.set(uploadId, job.jobId)
 
-  void indexUploadedSession(job, session).catch((error) => {
+  void indexUploadedSession(job, session, apiKeyOverride).catch((error) => {
     job.status = "failed"
     job.error = error instanceof Error ? error.message : "Failed to index the uploaded files."
     job.currentFile = undefined
