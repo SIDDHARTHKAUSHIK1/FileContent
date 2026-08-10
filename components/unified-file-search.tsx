@@ -15,13 +15,11 @@ import {
   Check,
   Copy,
   ExternalLink,
-  ChevronDown,
-  ChevronUp,
   Loader2,
   Trash2,
   SlidersHorizontal,
+  UploadCloud,
 } from "lucide-react"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -84,7 +82,7 @@ export function UnifiedFileSearch() {
   const [documents, setDocuments] = useState<UnifiedDocument[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStatus, setProcessingStatus] = useState<string>("")
-  const [isDragging, setIsDragging] = useState(false)
+  const [isGlobalDragging, setIsGlobalDragging] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [activeTab, setActiveTab] = useState<"search" | "ai">("search")
 
@@ -103,6 +101,7 @@ export function UnifiedFileSearch() {
   const folderInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const dragCounter = useRef(0)
 
   // Process incoming files
   const processFiles = useCallback(async (files: File[]) => {
@@ -132,56 +131,82 @@ export function UnifiedFileSearch() {
     setProcessingStatus("")
   }, [])
 
-  // Drag & drop handlers
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
+  // Window-wide drag & drop listener (catches drops ANYWHERE on the page)
+  useEffect(() => {
+    const handleWindowDragEnter = (e: DragEvent) => {
+      e.preventDefault()
+      dragCounter.current += 1
+      if (e.dataTransfer?.types?.includes("Files")) {
+        setIsGlobalDragging(true)
+      }
+    }
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }
+    const handleWindowDragLeave = (e: DragEvent) => {
+      e.preventDefault()
+      dragCounter.current -= 1
+      if (dragCounter.current <= 0) {
+        dragCounter.current = 0
+        setIsGlobalDragging(false)
+      }
+    }
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
+    const handleWindowDragOver = (e: DragEvent) => {
+      e.preventDefault()
+    }
 
-    const items = e.dataTransfer.items
-    const fileList: File[] = []
+    const handleWindowDrop = async (e: DragEvent) => {
+      e.preventDefault()
+      dragCounter.current = 0
+      setIsGlobalDragging(false)
 
-    if (items && items.length > 0) {
-      const traverseEntry = async (entry: any): Promise<void> => {
-        if (entry.isFile) {
-          const file = await new Promise<File>((resolve) => entry.file(resolve))
-          fileList.push(file)
-        } else if (entry.isDirectory) {
-          const reader = entry.createReader()
-          const entries = await new Promise<any[]>((resolve) => reader.readEntries(resolve))
-          for (const child of entries) {
-            await traverseEntry(child)
+      const items = e.dataTransfer?.items
+      const fileList: File[] = []
+
+      if (items && items.length > 0) {
+        const traverseEntry = async (entry: any): Promise<void> => {
+          if (entry.isFile) {
+            const file = await new Promise<File>((resolve) => entry.file(resolve))
+            fileList.push(file)
+          } else if (entry.isDirectory) {
+            const reader = entry.createReader()
+            const entries = await new Promise<any[]>((resolve) => reader.readEntries(resolve))
+            for (const child of entries) {
+              await traverseEntry(child)
+            }
           }
         }
-      }
 
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i]
-        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null
-        if (entry) {
-          await traverseEntry(entry)
-        } else if (item.kind === "file") {
-          const file = item.getAsFile()
-          if (file) fileList.push(file)
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i]
+          const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null
+          if (entry) {
+            await traverseEntry(entry)
+          } else if (item.kind === "file") {
+            const file = item.getAsFile()
+            if (file) fileList.push(file)
+          }
         }
+      } else if (e.dataTransfer?.files) {
+        fileList.push(...Array.from(e.dataTransfer.files))
       }
-    } else if (e.dataTransfer.files) {
-      fileList.push(...Array.from(e.dataTransfer.files))
+
+      if (fileList.length > 0) {
+        await processFiles(fileList)
+      }
     }
 
-    if (fileList.length > 0) {
-      await processFiles(fileList)
+    window.addEventListener("dragenter", handleWindowDragEnter)
+    window.addEventListener("dragleave", handleWindowDragLeave)
+    window.addEventListener("dragover", handleWindowDragOver)
+    window.addEventListener("drop", handleWindowDrop)
+
+    return () => {
+      window.removeEventListener("dragenter", handleWindowDragEnter)
+      window.removeEventListener("dragleave", handleWindowDragLeave)
+      window.removeEventListener("dragover", handleWindowDragOver)
+      window.removeEventListener("drop", handleWindowDrop)
     }
-  }
+  }, [processFiles])
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -248,17 +273,30 @@ export function UnifiedFileSearch() {
         onChange={handleFileInputChange}
       />
 
+      {/* FULL-PAGE GLOBAL DROPZONE OVERLAY (Triggered anywhere on screen) */}
+      {isGlobalDragging && (
+        <div className="fixed inset-0 z-50 bg-background/85 backdrop-blur-md flex flex-col items-center justify-center p-6 border-4 border-dashed border-purple-500/80 animate-in fade-in-50 duration-150 pointer-events-none">
+          <div className="p-6 rounded-3xl bg-purple-500/10 text-purple-600 dark:text-purple-400 mb-4 ring-8 ring-purple-500/10 animate-bounce">
+            <UploadCloud className="h-14 w-14" />
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-2 text-center">
+            Drop Anywhere to Upload
+          </h2>
+          <p className="text-sm text-muted-foreground max-w-md text-center">
+            Release your files or folder anywhere on the screen to parse and index them instantly.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-1.5 mt-4">
+            {["PDF", "Word", "Excel", "PowerPoint", "Code", "Text"].map((t) => (
+              <Badge key={t} variant="secondary" className="text-xs px-2 py-0.5 font-medium">
+                {t}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Main Clean Search & Drop Bar */}
-      <div
-        className={`relative rounded-2xl border transition-all duration-200 shadow-sm ${
-          isDragging
-            ? "border-purple-500 ring-4 ring-purple-500/10 bg-purple-50/50 dark:bg-purple-950/20"
-            : "border-border/80 bg-card hover:border-border"
-        }`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
+      <div className="relative rounded-2xl border border-border/80 bg-card hover:border-border transition-all duration-200 shadow-sm">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 sm:p-2.5">
           {/* Search Input Box */}
           <div className="relative flex-1 flex items-center">
@@ -271,7 +309,7 @@ export function UnifiedFileSearch() {
               placeholder={
                 documents.length > 0
                   ? `Search across ${documents.length} loaded document${documents.length === 1 ? "" : "s"}…`
-                  : "Drop files here or search keywords after uploading…"
+                  : "Drop files anywhere or search keywords after uploading…"
               }
               className="w-full h-11 pl-10 pr-9 bg-transparent text-sm placeholder:text-muted-foreground/70 focus:outline-none"
             />
@@ -320,22 +358,15 @@ export function UnifiedFileSearch() {
         )}
       </div>
 
-      {/* Drag Over Notification Overlay */}
-      {isDragging && (
-        <div className="text-center py-4 rounded-xl border border-dashed border-purple-500 bg-purple-500/5 text-purple-600 dark:text-purple-400 text-xs font-medium animate-in fade-in-50">
-          Drop your files or folder to start instant processing
-        </div>
-      )}
-
       {/* When Empty: Simple Clean Drop Hint */}
-      {documents.length === 0 && !isProcessing && !isDragging && (
-        <div className="text-center py-10 px-4 border border-dashed border-border/60 rounded-2xl bg-card/40">
+      {documents.length === 0 && !isProcessing && (
+        <div className="text-center py-10 px-4 border border-dashed border-border/60 rounded-2xl bg-card/40 hover:bg-card/60 transition-colors">
           <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center mx-auto mb-3 text-muted-foreground">
             <FolderOpen className="h-6 w-6" />
           </div>
-          <h3 className="text-sm font-semibold mb-1">No documents loaded yet</h3>
+          <h3 className="text-sm font-semibold mb-1">Drop any folder or files anywhere on this page</h3>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto mb-4">
-            Drag & drop any folder or click "Files" / "Folder" above to search across PDFs, Word, Excel, Slides, Code, and Text files.
+            Supports PDF, Word, Excel, PowerPoint, Code, and Text files. All content is decoded and indexed automatically.
           </p>
         </div>
       )}
