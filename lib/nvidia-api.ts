@@ -30,7 +30,7 @@ export function hasNvidiaApiKey(overrideKey?: string): boolean {
 function authorizationHeaders(apiKeyOverride?: string) {
   const apiKey = getNvidiaApiKey(apiKeyOverride)
   if (!apiKey) {
-    throw new Error("NVIDIA_API_KEY is not set. Add it in Vercel Project Settings -> Environment Variables or enter it in the app settings.")
+    throw new Error("NVIDIA_API_KEY is not set. Please add it in settings or Vercel environment variables.")
   }
 
   return {
@@ -48,6 +48,12 @@ async function nvidiaRequest<T>(path: string, body: Record<string, unknown>, api
 
   if (!response.ok) {
     console.error("NVIDIA API request failed", { path, status: response.status })
+    if (response.status === 401) {
+      throw new Error("Invalid or expired NVIDIA API Key (401 Unauthorized). Please enter a valid API key from https://build.nvidia.com/ in the AI settings.")
+    }
+    if (response.status === 402 || response.status === 429) {
+      throw new Error("NVIDIA API rate limit or quota exceeded. Please try again shortly or provide a new key in settings.")
+    }
     throw new Error(`NVIDIA API request failed with status ${response.status}.`)
   }
 
@@ -76,7 +82,12 @@ export async function generateNvidiaAnswer(prompt: string, apiKeyOverride?: stri
       const text = content.map((part) => part.text || "").join("").trim()
       if (text) return text
     }
-  } catch (primaryErr) {
+  } catch (primaryErr: any) {
+    // If it's a 401 Unauthorized error, don't try fallback as it's an auth issue
+    if (primaryErr?.message?.includes("401") || primaryErr?.message?.includes("Unauthorized")) {
+      throw primaryErr
+    }
+
     console.warn("Primary model failed, trying fallback model:", primaryErr)
     const fallbackData = await nvidiaRequest<NvidiaChatResponse>(
       "/chat/completions",

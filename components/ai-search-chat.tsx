@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useRef, useState } from "react"
-import { Bot, FileText, Key, Loader2, Send, Sparkles, Upload, User, Check, AlertCircle } from "lucide-react"
+import { Bot, FileText, Key, Loader2, Send, Sparkles, Upload, User, Check, AlertCircle, ExternalLink, RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -105,6 +105,14 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
     setError(null)
   }
 
+  const clearCustomKey = () => {
+    setApiKey("")
+    localStorage.removeItem("nvidia_api_key")
+    setError(null)
+    setKeySaved(true)
+    setTimeout(() => setKeySaved(false), 2000)
+  }
+
   const getAuthHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = { "Content-Type": "application/json" }
     const activeKey = apiKey.trim() || (typeof window !== "undefined" ? localStorage.getItem("nvidia_api_key") || "" : "")
@@ -125,128 +133,172 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
       return indexRef.current.indexId
     }
 
-    setIndexStatus("Indexing uploaded documents for retrieval…")
+    setIndexStatus("Building document search index…")
     const response = await fetch("/api/rag/index", {
       method: "POST",
       headers: getAuthHeaders(),
-      body: JSON.stringify({ documents: uploadedDocuments, apiKey: apiKey.trim() || undefined }),
+      body: JSON.stringify({
+        documents: uploadedDocuments.map((document) => ({
+          id: document.id,
+          name: document.name,
+          path: document.path,
+          content: document.content,
+        })),
+        apiKey: apiKey.trim() || undefined,
+      }),
     })
-    const data = await response.json()
+
     if (!response.ok) {
-      if (data.error?.includes("NVIDIA_API_KEY")) {
+      const data = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
+      if (data.error?.includes("401") || data.error?.includes("NVIDIA_API_KEY") || data.error?.includes("Unauthorized")) {
         setShowKeyInput(true)
       }
-      throw new Error(data.error || "Unable to index the uploaded documents.")
+      throw new Error(data.error || "Failed to index documents.")
     }
 
+    const payload = (await response.json()) as { indexId: string; documentCount: number; chunkCount: number }
     indexRef.current = {
       fingerprint,
-      indexId: data.indexId,
-      documentCount: data.documentCount,
-      chunkCount: data.chunkCount,
+      indexId: payload.indexId,
+      documentCount: payload.documentCount,
+      chunkCount: payload.chunkCount,
     }
-    setIndexStatus(`Indexed ${data.documentCount} document${data.documentCount === 1 ? "" : "s"} into ${data.chunkCount} searchable chunks.`)
-    return data.indexId as string
+    setIndexStatus(`Indexed ${payload.documentCount} file${payload.documentCount === 1 ? "" : "s"} (${payload.chunkCount} chunks)`)
+    return payload.indexId
+  }
+
+  const pollJobUntilComplete = async (jobId: string) => {
+    while (true) {
+      const response = await fetch(`/api/rag/index?jobId=${encodeURIComponent(jobId)}`, {
+        headers: getAuthHeaders(),
+      })
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
+        throw new Error(data.error || "Failed to inspect indexing job.")
+      }
+
+      const job = (await response.json()) as UploadIndexJob
+      if (job.status === "failed") throw new Error(job.error || "Indexing failed.")
+
+      setIndexStatus(`Indexing files (${job.processedFiles}/${job.fileCount}) • ${job.chunkCount} chunks`)
+
+      if (job.status === "complete") {
+        if (!job.indexId) throw new Error("Index job completed without an index ID.")
+        return job.indexId
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 800))
+    }
   }
 
   const ensureUploadedIndex = async (session: LargeUploadSession) => {
-    const fingerprint = `upload:${session.uploadId}`
-    if (indexRef.current?.fingerprint === fingerprint) return indexRef.current.indexId
+    if (indexRef.current?.fingerprint === session.uploadId) {
+      return indexRef.current.indexId
+    }
 
-    setIndexStatus("Starting server-side indexing for the uploaded files…")
-    const startResponse = await fetch("/api/rag/index", {
+    setIndexStatus(`Queuing index build for ${session.fileCount} uploaded files…`)
+    const response = await fetch("/api/rag/index", {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ uploadId: session.uploadId, apiKey: apiKey.trim() || undefined }),
     })
-    let job = (await startResponse.json()) as UploadIndexJob
-    if (!startResponse.ok) {
-      if (job.error?.includes("NVIDIA_API_KEY")) {
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
+      if (data.error?.includes("401") || data.error?.includes("NVIDIA_API_KEY") || data.error?.includes("Unauthorized")) {
         setShowKeyInput(true)
       }
-      throw new Error(job.error || "Unable to start document indexing.")
+      throw new Error(data.error || "Failed to start index job.")
     }
 
-    while (job.status === "indexing") {
-      setIndexStatus(`Indexing ${job.processedFiles}/${job.fileCount} files${job.currentFile ? `: ${job.currentFile}` : ""} (${job.chunkCount} chunks)…`)
-      await new Promise((resolve) => window.setTimeout(resolve, 1_000))
-      const statusResponse = await fetch(`/api/rag/index?jobId=${encodeURIComponent(job.jobId)}`, { cache: "no-store" })
-      job = (await statusResponse.json()) as UploadIndexJob
-      if (!statusResponse.ok) throw new Error(job.error || "Unable to read indexing progress.")
-    }
-
-    if (job.status === "failed" || !job.indexId) {
-      if (job.error?.includes("NVIDIA_API_KEY")) {
-        setShowKeyInput(true)
-      }
-      throw new Error(job.error || "The uploaded files could not be indexed.")
-    }
+    const payload = (await response.json()) as { jobId: string }
+    const indexId = await pollJobUntilComplete(payload.jobId)
 
     indexRef.current = {
-      fingerprint,
-      indexId: job.indexId,
-      documentCount: job.fileCount,
-      chunkCount: job.chunkCount,
+      fingerprint: session.uploadId,
+      indexId,
+      documentCount: session.fileCount,
+      chunkCount: 0,
     }
-    setIndexStatus(`Indexed ${job.fileCount} file${job.fileCount === 1 ? "" : "s"} into ${job.chunkCount} searchable chunks.`)
-    return job.indexId
+    setIndexStatus(`Ready — indexed ${session.fileCount} files`)
+    return indexId
   }
 
-  const handleLargeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    if (files.length === 0) return
-
-    const totalBytes = files.reduce((total, file) => total + file.size, 0)
+  const uploadFilesDirectly = async (files: File[]) => {
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
     if (totalBytes > MAX_UPLOAD_BYTES) {
-      setError("Uploads are limited to 500 MB in total. Choose a smaller set of files.")
-      event.target.value = ""
-      return
+      throw new Error(`Total upload exceeds ${formatBytes(MAX_UPLOAD_BYTES)} limit.`)
     }
 
-    setError(null)
     setIsUploading(true)
     setUploadProgress(0)
-    setIndexStatus("Uploading files securely to processing queue…")
+    setError(null)
+    setLargeUpload(null)
+    indexRef.current = null
 
     try {
-      const session = await new Promise<LargeUploadSession>((resolve, reject) => {
-        const formData = new FormData()
-        for (const file of files) {
-          const relativePath = file.webkitRelativePath || file.name
-          formData.append("files", file, relativePath)
+      const formData = new FormData()
+      for (const file of files) {
+        formData.append("files", file, (file as any).webkitRelativePath || file.name)
+      }
+
+      const uploadPromise = new Promise<{ uploadId: string; fileCount: number; totalBytes: number }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest()
+        xhr.open("POST", "/api/uploads")
+
+        const activeKey = apiKey.trim() || (typeof window !== "undefined" ? localStorage.getItem("nvidia_api_key") || "" : "")
+        if (activeKey) {
+          xhr.setRequestHeader("x-nvidia-api-key", activeKey)
         }
 
-        const request = new XMLHttpRequest()
-        request.open("POST", "/api/uploads")
-        request.upload.onprogress = (progressEvent) => {
-          if (progressEvent.lengthComputable) {
-            setUploadProgress(Math.round((progressEvent.loaded / progressEvent.total) * 100))
-          }
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return
+          const percentage = Math.round((event.loaded / event.total) * 100)
+          setUploadProgress(percentage)
         }
-        request.onerror = () => reject(new Error("The upload could not reach the server."))
-        request.onload = () => {
-          try {
-            const data = JSON.parse(request.responseText) as LargeUploadSession & { error?: string }
-            if (request.status < 200 || request.status >= 300) {
-              reject(new Error(data.error || "The upload failed."))
-              return
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const parsed = JSON.parse(xhr.responseText)
+              resolve(parsed)
+            } catch (err) {
+              reject(new Error("Malformed upload response."))
             }
-            resolve(data)
-          } catch {
-            reject(new Error("The server returned an invalid upload response."))
+          } else {
+            try {
+              const parsed = JSON.parse(xhr.responseText)
+              reject(new Error(parsed.error || `Upload failed (HTTP ${xhr.status})`))
+            } catch {
+              reject(new Error(`Upload failed (HTTP ${xhr.status})`))
+            }
           }
         }
-        request.send(formData)
+
+        xhr.onerror = () => reject(new Error("Network error during file upload."))
+        xhr.send(formData)
       })
 
-      setLargeUpload(session)
-      indexRef.current = null
-      setIndexStatus(`Uploaded ${session.fileCount} file${session.fileCount === 1 ? "" : "s"} (${formatBytes(session.totalBytes)}). Ask a question to start background indexing.`)
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Upload failed.")
-      setIndexStatus(null)
+      const result = await uploadPromise
+      setLargeUpload(result)
+      setIndexStatus(`Uploaded ${result.fileCount} files (${formatBytes(result.totalBytes)}). Ready to index.`)
     } finally {
       setIsUploading(false)
+      setUploadProgress(null)
+    }
+  }
+
+  const handleUploadChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files ? Array.from(event.target.files) : []
+    if (files.length === 0) return
+
+    try {
+      await uploadFilesDirectly(files)
+    } catch (uploadError) {
+      const message = uploadError instanceof Error ? uploadError.message : "File upload failed."
+      setError(message)
+    } finally {
       setUploadProgress(null)
       event.target.value = ""
     }
@@ -285,7 +337,7 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({ error: `HTTP ${response.status}` }))
-        if (data.error?.includes("NVIDIA_API_KEY")) {
+        if (data.error?.includes("401") || data.error?.includes("NVIDIA_API_KEY") || data.error?.includes("Unauthorized")) {
           setShowKeyInput(true)
         }
         throw new Error(data.error || `HTTP ${response.status}`)
@@ -335,7 +387,7 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
       if (streamError) throw new Error(streamError)
     } catch (caughtError) {
       const message = caughtError instanceof Error ? caughtError.message : "Failed to answer from the uploaded documents."
-      if (message.includes("NVIDIA_API_KEY")) {
+      if (message.includes("401") || message.includes("NVIDIA_API_KEY") || message.includes("Unauthorized")) {
         setShowKeyInput(true)
       }
       setError(message)
@@ -389,7 +441,7 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
 
         {/* Inline API Key Configuration Card */}
         {showKeyInput && (
-          <div className="mt-3 p-3.5 rounded-lg border border-purple-500/30 bg-purple-50/50 dark:bg-purple-950/20 space-y-2">
+          <div className="mt-3 p-4 rounded-2xl border border-purple-500/30 bg-purple-50/50 dark:bg-purple-950/20 space-y-2.5 animate-in fade-in-50">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-purple-900 dark:text-purple-300 flex items-center gap-1.5">
                 <Key className="h-3.5 w-3.5 text-purple-600" />
@@ -401,20 +453,36 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Enter your NVIDIA API Key (e.g. <code className="bg-muted px-1 rounded">nvapi-...</code>). Saved in your browser so you don't need to rebuild Vercel.
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              If your API key returns 401 Unauthorized, get a free active key from{" "}
+              <a
+                href="https://build.nvidia.com/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-purple-600 dark:text-purple-400 underline font-medium inline-flex items-center gap-0.5"
+              >
+                build.nvidia.com <ExternalLink className="h-2.5 w-2.5" />
+              </a>{" "}
+              and paste it below.
             </p>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <Input
                 type="password"
                 placeholder="nvapi-..."
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                className="h-8 text-xs font-mono"
+                className="h-9 text-xs font-mono flex-1"
               />
-              <Button size="sm" className="h-8 text-xs bg-purple-600 hover:bg-purple-700 text-white" onClick={() => saveCustomKey(apiKey)}>
-                Save Key
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" className="h-9 text-xs bg-purple-600 hover:bg-purple-700 text-white" onClick={() => saveCustomKey(apiKey)}>
+                  Save Key
+                </Button>
+                {apiKey && (
+                  <Button size="sm" variant="ghost" className="h-9 text-xs text-muted-foreground hover:text-destructive" onClick={clearCustomKey}>
+                    <RotateCcw className="h-3 w-3 mr-1" /> Reset
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -429,89 +497,97 @@ export default function AISearchChat({ documents = [], getDocuments, hasDocument
               <p className="text-sm font-medium">Large-document upload</p>
               <p className="text-xs text-muted-foreground">Upload up to 500 MB total. Files are streamed and indexed in batches.</p>
             </div>
-            <input
-              ref={uploadInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={handleLargeUpload}
-            />
-            <Button type="button" variant="outline" size="sm" disabled={isUploading || isLoading} onClick={() => uploadInputRef.current?.click()}>
-              {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-              {isUploading ? `Uploading ${uploadProgress ?? 0}%` : largeUpload ? "Replace files" : "Upload files"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <input ref={uploadInputRef} type="file" multiple className="hidden" onChange={handleUploadChange} />
+              <Button size="sm" variant="outline" disabled={isUploading} onClick={() => uploadInputRef.current?.click()}>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload Server Files
+              </Button>
+            </div>
           </div>
-        </div>
 
-        <div className="flex-1 overflow-y-auto px-4" style={{ maxHeight: 400 }}>
-          <div className="space-y-4 pb-4">
-            {messages.length === 0 && (
-              <div className="py-8 text-center text-muted-foreground">
-                <Bot className="mx-auto mb-4 h-12 w-12 opacity-50" />
-                <p>Ask a question about the files you uploaded.</p>
-                <p className="text-sm">If the information is not in those files, the assistant will say so.</p>
-              </div>
-            )}
+          {uploadProgress !== null && (
+            <div className="mt-2 text-xs text-muted-foreground">Uploading: {uploadProgress}%</div>
+          )}
 
-            {messages.map((message) => (
-              <div key={message.id} className={`flex gap-3 ${message.type === "user" ? "justify-end" : "justify-start"}`}>
-                {message.type === "ai" && (
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900">
-                    <Bot className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                  </div>
-                )}
-                <div className={`max-w-[80%] rounded-lg px-4 py-2 ${message.type === "user" ? "bg-blue-500 text-white" : "bg-muted"}`}>
-                  <div className="whitespace-pre-wrap">{message.content || (message.type === "ai" && isLoading ? "Thinking…" : "")}</div>
-                  {message.sources && message.sources.length > 0 && (
-                    <div className="mt-2 border-t pt-2 text-xs text-muted-foreground">
-                      <div className="mb-1 flex items-center gap-1 font-medium"><FileText className="h-3 w-3" /> Retrieved sources</div>
-                      {message.sources.map((source, index) => (
-                        <div key={`${source.documentId}-${source.chunk}`}>[S{index + 1}] {source.name}, chunk {source.chunk}</div>
-                      ))}
-                    </div>
-                  )}
-                  <div className={`mt-1 text-xs ${message.type === "user" ? "text-blue-100" : "text-muted-foreground"}`}>{message.timestamp.toLocaleTimeString()}</div>
-                </div>
-                {message.type === "user" && (
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-500">
-                    <User className="h-4 w-4 text-white" />
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {isLoading && (
-              <div className="flex gap-3 justify-start">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900"><Bot className="h-4 w-4 text-purple-600 dark:text-purple-400" /></div>
-                <div className="rounded-lg bg-muted px-4 py-2"><div className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /><span className="text-sm">{indexStatus?.startsWith("Indexing") ? "Indexing documents…" : "Retrieving document context…"}</span></div></div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="border-t p-4">
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(event) => setInputValue(event.target.value)}
-              placeholder={canAsk ? "Ask only about the uploaded documents…" : "Upload a document to enable AI search…"}
-              className="flex-1 rounded-md border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              disabled={isLoading || !canAsk}
-            />
-            <Button type="submit" disabled={isLoading || !inputValue.trim() || !canAsk} size="sm"><Send className="h-4 w-4" /></Button>
-          </form>
-          {error && (
-            <div className="mt-2 text-xs text-red-600 flex items-center justify-between">
-              <span>{error}</span>
-              {error.includes("NVIDIA_API_KEY") && (
-                <Button variant="link" size="sm" className="h-auto p-0 text-xs text-purple-600 underline" onClick={() => setShowKeyInput(true)}>
-                  Enter API Key Now
-                </Button>
-              )}
+          {largeUpload && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              Ready: {largeUpload.fileCount} files ({formatBytes(largeUpload.totalBytes)})
             </div>
           )}
         </div>
+
+        {error && (
+          <div className="m-4 flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="flex-1 space-y-4 overflow-y-auto p-4 max-h-[380px]">
+          {messages.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center text-center text-muted-foreground py-10">
+              <Bot className="mb-2 h-10 w-10 opacity-50" />
+              <p className="text-sm font-medium">Ask questions about your uploaded documents</p>
+              <p className="text-xs text-muted-foreground max-w-sm mt-1">
+                The AI only uses verified document excerpts to answer your questions.
+              </p>
+            </div>
+          ) : (
+            messages.map((message) => (
+              <div key={message.id} className={`flex gap-3 ${message.type === "user" ? "justify-end" : "justify-start"}`}>
+                {message.type === "ai" && (
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 dark:bg-purple-950 dark:text-purple-300">
+                    <Bot className="h-4 w-4" />
+                  </div>
+                )}
+                <div
+                  className={`max-w-[85%] rounded-2xl p-3.5 text-sm ${
+                    message.type === "user"
+                      ? "bg-purple-600 text-white"
+                      : "bg-muted/80 text-foreground border border-border/50"
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                  {message.sources && message.sources.length > 0 && (
+                    <div className="mt-3 border-t border-border/40 pt-2 text-xs opacity-90">
+                      <p className="font-semibold mb-1">Retrieved sources:</p>
+                      <div className="space-y-0.5">
+                        {message.sources.map((source, index) => (
+                          <p key={`${source.documentId}-${source.chunk}`}>
+                            [S{index + 1}] {source.name}, chunk {source.chunk}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {message.type === "user" && (
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                    <User className="h-4 w-4" />
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className="border-t p-3.5 flex gap-2">
+          <Input
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            placeholder={
+              canAsk
+                ? "Ask a question about your documents…"
+                : "Upload documents above before asking questions"
+            }
+            disabled={!canAsk || isLoading}
+            className="flex-1 text-xs sm:text-sm h-10 rounded-xl"
+          />
+          <Button type="submit" size="sm" disabled={!canAsk || isLoading || !inputValue.trim()} className="h-10 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white">
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </Button>
+        </form>
       </CardContent>
     </Card>
   )
