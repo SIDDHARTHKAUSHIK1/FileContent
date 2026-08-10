@@ -43,7 +43,7 @@ export interface SearchFilterOptions {
   caseSensitive: boolean
   wholeWord: boolean
   useRegex: boolean
-  selectedTypes?: string[] // e.g. ["pdf", "word", "code", "text", "spreadsheet", "presentation"]
+  selectedTypes?: string[]
 }
 
 export const SUPPORTED_EXTENSIONS_MAP: Record<string, { type: UnifiedDocument["type"]; label: string; iconName: string; color: string }> = {
@@ -95,6 +95,20 @@ export function getFileTypeCategory(filename: string): UnifiedDocument["type"] {
   return SUPPORTED_EXTENSIONS_MAP[ext]?.type || "other"
 }
 
+/**
+ * Yield execution back to the browser event loop to ensure the UI stays at 60 FPS
+ * and never triggers "Page Unresponsive" dialogs during heavy file processing.
+ */
+export async function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== "undefined") {
+      requestAnimationFrame(() => setTimeout(resolve, 0))
+    } else {
+      setTimeout(resolve, 0)
+    }
+  })
+}
+
 export class UnifiedDocumentParser {
   static async parseFile(file: File, relativePath?: string): Promise<UnifiedDocument> {
     const extension = getFileExtension(file.name)
@@ -131,6 +145,8 @@ export class UnifiedDocumentParser {
       content = `[Notice: File "${file.name}" content could not be fully decoded: ${err instanceof Error ? err.message : String(err)}]`
     }
 
+    await yieldToMain()
+
     const lines = content.split("\n")
     const words = content.trim().split(/\s+/).filter(Boolean)
 
@@ -150,6 +166,50 @@ export class UnifiedDocumentParser {
     }
   }
 
+  /**
+   * Concurrently processes a queue of files with controlled worker pool concurrency (default 3),
+   * ensuring fast parallel parsing while preventing memory exhaustion.
+   */
+  static async parseFilesConcurrentPool(
+    files: File[],
+    onProgress?: (processed: number, total: number, currentFileName: string) => void,
+    concurrency = 3
+  ): Promise<UnifiedDocument[]> {
+    if (files.length === 0) return []
+
+    const results: UnifiedDocument[] = []
+    let currentIndex = 0
+    let processedCount = 0
+
+    const poolWorkers = Array.from({ length: Math.min(concurrency, files.length) }, async () => {
+      while (currentIndex < files.length) {
+        const index = currentIndex++
+        const file = files[index]
+
+        if (onProgress) {
+          onProgress(processedCount, files.length, file.name)
+        }
+
+        try {
+          const parsed = await this.parseFile(file)
+          results.push(parsed)
+        } catch (err) {
+          console.error(`Error parsing ${file.name}:`, err)
+        }
+
+        processedCount++
+        if (onProgress) {
+          onProgress(processedCount, files.length, file.name)
+        }
+
+        await yieldToMain()
+      }
+    })
+
+    await Promise.all(poolWorkers)
+    return results
+  }
+
   private static async readAsText(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader()
@@ -167,7 +227,14 @@ export class UnifiedDocumentParser {
       pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js"
     }
 
-    const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise
+    const pdf = await pdfjs.getDocument({
+      data: arrayBuffer,
+      useSystemFonts: true,
+      disableFontFace: true,
+      isEvalSupported: false,
+      verbosity: 0,
+    }).promise
+
     const pages: ParsedPage[] = []
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
@@ -175,8 +242,8 @@ export class UnifiedDocumentParser {
       const textContent = await page.getTextContent()
       let pageText = textContent.items.map((item: any) => item.str || "").join(" ").trim()
 
-      // If page has very little or no selectable text, attempt OCR if on client
-      if (pageText.length < 20 && typeof window !== "undefined") {
+      // Lazy OCR: only attempt OCR if page has absolutely zero selectable text
+      if (pageText.length === 0 && typeof window !== "undefined") {
         try {
           const tesseract = (await import("tesseract.js")).default
           const viewport = page.getViewport({ scale: 1.5 })
@@ -188,7 +255,7 @@ export class UnifiedDocumentParser {
             await page.render({ canvasContext: ctx, viewport }).promise
             const ocrResult = await tesseract.recognize(canvas.toDataURL(), "eng")
             if (ocrResult.data?.text?.trim()) {
-              pageText = (pageText ? pageText + "\n" : "") + ocrResult.data.text.trim()
+              pageText = ocrResult.data.text.trim()
             }
           }
         } catch (ocrErr) {
@@ -201,6 +268,10 @@ export class UnifiedDocumentParser {
         title: `Page ${pageNum}`,
         content: pageText,
       })
+
+      if (pageNum % 5 === 0) {
+        await yieldToMain()
+      }
     }
 
     const fullContent = pages.map((p) => `--- ${p.title} ---\n${p.content}`).join("\n\n")
@@ -213,7 +284,6 @@ export class UnifiedDocumentParser {
 
     if (ext === "doc") {
       const text = await this.readAsText(file)
-      // Extract printable characters for legacy doc
       const printable = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "").trim()
       return { content: printable || "[Legacy .doc file with binary formatting]", pages: [] }
     }
@@ -221,7 +291,6 @@ export class UnifiedDocumentParser {
     const result = await mammoth.extractRawText({ arrayBuffer })
     const fullText = result.value.trim()
 
-    // Approximate pages (500 words per page)
     const paragraphs = fullText.split(/\n\n+/)
     const pages: ParsedPage[] = []
     let currentPageContent = ""
@@ -344,7 +413,6 @@ export function searchUnifiedDocuments(
 
   for (const doc of filteredDocs) {
     if (doc.pages && doc.pages.length > 0) {
-      // Document has structured pages / slides / sheets
       for (const page of doc.pages) {
         const lines = page.content.split("\n")
         lines.forEach((line, lineIndex) => {
@@ -377,7 +445,6 @@ export function searchUnifiedDocuments(
         })
       }
     } else {
-      // Plain text or code file
       const lines = doc.content.split("\n")
       lines.forEach((line, lineIndex) => {
         regex.lastIndex = 0

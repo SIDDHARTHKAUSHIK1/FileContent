@@ -19,7 +19,7 @@ import {
   Trash2,
   SlidersHorizontal,
   UploadCloud,
-  FileSpreadsheet,
+  ChevronDown,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -35,6 +35,8 @@ import {
 } from "@/lib/unified-document-parser"
 import AISearchChat from "@/components/ai-search-chat"
 import type { RagDocumentInput } from "@/lib/rag-types"
+
+const MATCHES_PER_PAGE = 50
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -85,6 +87,8 @@ export function UnifiedFileSearch() {
   const [processingStatus, setProcessingStatus] = useState<string>("")
   const [isGlobalDragging, setIsGlobalDragging] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedQuery, setDebouncedQuery] = useState("")
+  const [visibleCount, setVisibleCount] = useState(MATCHES_PER_PAGE)
   const [activeTab, setActiveTab] = useState<"search" | "ai">("search")
 
   // Search options
@@ -104,32 +108,41 @@ export function UnifiedFileSearch() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const dragCounter = useRef(0)
 
-  // Process incoming files
+  // Debounce search query (150ms) to ensure smooth 60 FPS typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery)
+      setVisibleCount(MATCHES_PER_PAGE)
+    }, 150)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  // Non-blocking concurrent file processing
   const processFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return
     setIsProcessing(true)
-    setProcessingStatus(`Parsing ${files.length} file${files.length === 1 ? "" : "s"}…`)
+    setProcessingStatus(`Initializing parser for ${files.length} file${files.length === 1 ? "" : "s"}…`)
 
-    const parsedDocs: UnifiedDocument[] = []
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      setProcessingStatus(`Parsing (${i + 1}/${files.length}): ${file.name}`)
-      try {
-        const doc = await UnifiedDocumentParser.parseFile(file)
-        parsedDocs.push(doc)
-      } catch (err) {
-        console.error(`Failed to process ${file.name}:`, err)
-      }
+    try {
+      const parsedDocs = await UnifiedDocumentParser.parseFilesConcurrentPool(
+        files,
+        (processed, total, currentName) => {
+          setProcessingStatus(`Parsing (${processed}/${total}): ${currentName}`)
+        },
+        3 // 3 concurrent workers
+      )
+
+      setDocuments((prev) => {
+        const existingIds = new Set(prev.map((d) => d.id))
+        const newUnique = parsedDocs.filter((d) => !existingIds.has(d.id))
+        return [...prev, ...newUnique]
+      })
+    } catch (err) {
+      console.error("Batch processing error:", err)
+    } finally {
+      setIsProcessing(false)
+      setProcessingStatus("")
     }
-
-    setDocuments((prev) => {
-      const existingIds = new Set(prev.map((d) => d.id))
-      const newUnique = parsedDocs.filter((d) => !existingIds.has(d.id))
-      return [...prev, ...newUnique]
-    })
-
-    setIsProcessing(false)
-    setProcessingStatus("")
   }, [])
 
   // Window-wide drag & drop listener (catches drops ANYWHERE on the page)
@@ -234,15 +247,19 @@ export function UnifiedFileSearch() {
 
   // Search Results
   const searchResults = useMemo(() => {
-    if (!searchQuery.trim() || documents.length === 0) return []
+    if (!debouncedQuery.trim() || documents.length === 0) return []
     const options: SearchFilterOptions = {
       caseSensitive,
       wholeWord,
       useRegex,
       selectedTypes: typeFilter === "all" ? undefined : [typeFilter],
     }
-    return searchUnifiedDocuments(documents, searchQuery, options)
-  }, [documents, searchQuery, caseSensitive, wholeWord, useRegex, typeFilter])
+    return searchUnifiedDocuments(documents, debouncedQuery, options)
+  }, [documents, debouncedQuery, caseSensitive, wholeWord, useRegex, typeFilter])
+
+  const paginatedResults = useMemo(() => {
+    return searchResults.slice(0, visibleCount)
+  }, [searchResults, visibleCount])
 
   const getRagDocuments = useCallback(async (): Promise<RagDocumentInput[]> => {
     return documents.map((doc) => ({
@@ -557,13 +574,20 @@ export function UnifiedFileSearch() {
               {searchQuery.trim() ? (
                 searchResults.length > 0 ? (
                   <div className="space-y-3">
-                    <div className="text-xs sm:text-sm text-muted-foreground font-medium px-1">
-                      Found {searchResults.length} match{searchResults.length === 1 ? "" : "es"} across{" "}
-                      {new Set(searchResults.map((r) => r.documentId)).size} file
-                      {new Set(searchResults.map((r) => r.documentId)).size === 1 ? "" : "s"}
+                    <div className="text-xs sm:text-sm text-muted-foreground font-medium px-1 flex items-center justify-between">
+                      <span>
+                        Found {searchResults.length} match{searchResults.length === 1 ? "" : "es"} across{" "}
+                        {new Set(searchResults.map((r) => r.documentId)).size} file
+                        {new Set(searchResults.map((r) => r.documentId)).size === 1 ? "" : "s"}
+                      </span>
+                      {searchResults.length > MATCHES_PER_PAGE && (
+                        <span>
+                          Showing {Math.min(visibleCount, searchResults.length)} of {searchResults.length}
+                        </span>
+                      )}
                     </div>
 
-                    {searchResults.map((match) => {
+                    {paginatedResults.map((match) => {
                       const Icon = getIconForType(match.documentType)
                       const style = getBadgeStyleForType(match.documentType)
 
@@ -619,6 +643,21 @@ export function UnifiedFileSearch() {
                         </Card>
                       )
                     })}
+
+                    {/* Pagination / Load More Button for large match sets */}
+                    {visibleCount < searchResults.length && (
+                      <div className="pt-2 text-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setVisibleCount((prev) => prev + MATCHES_PER_PAGE)}
+                          className="text-xs font-medium rounded-xl border-border/80"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5 mr-1.5" />
+                          Load {Math.min(MATCHES_PER_PAGE, searchResults.length - visibleCount)} More Matches ({searchResults.length - visibleCount} remaining)
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="py-12 text-center text-muted-foreground text-sm">
