@@ -9,13 +9,13 @@ export default function FileSearchHome() {
     <div className="min-h-screen bg-background flex flex-col selection:bg-purple-500/20">
       <GlobalHeader />
 
-      <main className="flex-1 container mx-auto max-w-4xl px-4 py-8">
+      <main className="flex-1 container mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-8">
         {/* Simple, Minimalist Hero */}
-        <div className="text-center max-w-2xl mx-auto mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2">
+        <div className="text-center max-w-3xl mx-auto mb-6">
+          <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-2">
             Universal Content Search & AI
           </h1>
-          <p className="text-muted-foreground text-xs sm:text-sm">
+          <p className="text-muted-foreground text-sm sm:text-base">
             Search inside any folder, PDF, Word doc, Excel sheet, code, or text file.
           </p>
         </div>
@@ -27,7 +27,7 @@ export default function FileSearchHome() {
         <UnifiedFileSearch />
       </main>
 
-      <footer className="border-t border-border/40 py-5 text-center text-[11px] text-muted-foreground">
+      <footer className="border-t border-border/40 py-5 text-center text-xs text-muted-foreground">
         <p>© {new Date().getFullYear()} File Content Tracker • Universal Multi-Format Search & AI</p>
       </footer>
     </div>

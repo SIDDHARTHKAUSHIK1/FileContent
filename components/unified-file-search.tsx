@@ -19,6 +19,7 @@ import {
   Trash2,
   SlidersHorizontal,
   UploadCloud,
+  FileSpreadsheet,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -259,7 +260,7 @@ export function UnifiedFileSearch() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Hidden file & folder inputs */}
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileInputChange} />
       <input
@@ -275,19 +276,19 @@ export function UnifiedFileSearch() {
 
       {/* FULL-PAGE GLOBAL DROPZONE OVERLAY (Triggered anywhere on screen) */}
       {isGlobalDragging && (
-        <div className="fixed inset-0 z-50 bg-background/85 backdrop-blur-md flex flex-col items-center justify-center p-6 border-4 border-dashed border-purple-500/80 animate-in fade-in-50 duration-150 pointer-events-none">
-          <div className="p-6 rounded-3xl bg-purple-500/10 text-purple-600 dark:text-purple-400 mb-4 ring-8 ring-purple-500/10 animate-bounce">
-            <UploadCloud className="h-14 w-14" />
+        <div className="fixed inset-0 z-50 bg-background/90 backdrop-blur-md flex flex-col items-center justify-center p-6 border-4 border-dashed border-purple-500 animate-in fade-in-50 duration-150 pointer-events-none">
+          <div className="p-8 rounded-full bg-purple-500/10 text-purple-600 dark:text-purple-400 mb-6 ring-8 ring-purple-500/10 animate-bounce">
+            <UploadCloud className="h-20 w-20" />
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground mb-2 text-center">
+          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-foreground mb-3 text-center">
             Drop Anywhere to Upload
           </h2>
-          <p className="text-sm text-muted-foreground max-w-md text-center">
+          <p className="text-base text-muted-foreground max-w-lg text-center leading-relaxed">
             Release your files or folder anywhere on the screen to parse and index them instantly.
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-1.5 mt-4">
-            {["PDF", "Word", "Excel", "PowerPoint", "Code", "Text"].map((t) => (
-              <Badge key={t} variant="secondary" className="text-xs px-2 py-0.5 font-medium">
+          <div className="flex flex-wrap items-center justify-center gap-2 mt-6">
+            {["PDF", "Word (.docx)", "Excel (.xlsx)", "PowerPoint (.pptx)", "Code", "Text"].map((t) => (
+              <Badge key={t} variant="secondary" className="text-xs px-3 py-1 font-medium">
                 {t}
               </Badge>
             ))}
@@ -295,12 +296,12 @@ export function UnifiedFileSearch() {
         </div>
       )}
 
-      {/* Main Clean Search & Drop Bar */}
+      {/* Main Search Input Bar */}
       <div className="relative rounded-2xl border border-border/80 bg-card hover:border-border transition-all duration-200 shadow-sm">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2 sm:p-2.5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 sm:p-3">
           {/* Search Input Box */}
           <div className="relative flex-1 flex items-center">
-            <Search className="absolute left-3.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Search className="absolute left-4 h-5 w-5 text-muted-foreground pointer-events-none" />
             <input
               ref={searchInputRef}
               type="text"
@@ -309,15 +310,15 @@ export function UnifiedFileSearch() {
               placeholder={
                 documents.length > 0
                   ? `Search across ${documents.length} loaded document${documents.length === 1 ? "" : "s"}…`
-                  : "Drop files anywhere or search keywords after uploading…"
+                  : "Search inside documents or drop files below…"
               }
-              className="w-full h-11 pl-10 pr-9 bg-transparent text-sm placeholder:text-muted-foreground/70 focus:outline-none"
+              className="w-full h-12 pl-12 pr-10 bg-transparent text-sm sm:text-base placeholder:text-muted-foreground/70 focus:outline-none"
             />
             {searchQuery && (
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
-                className="absolute right-3 text-muted-foreground hover:text-foreground"
+                className="absolute right-3.5 text-muted-foreground hover:text-foreground p-1"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -325,49 +326,92 @@ export function UnifiedFileSearch() {
           </div>
 
           {/* Quick Action Upload Buttons */}
-          <div className="flex items-center gap-1.5 justify-end px-1 sm:px-0">
+          <div className="flex items-center gap-2 justify-end px-1 sm:px-0">
             <Button
               variant="outline"
-              size="sm"
+              size="default"
               disabled={isProcessing}
               onClick={() => fileInputRef.current?.click()}
-              className="h-9 text-xs rounded-xl"
+              className="h-10 px-4 text-xs sm:text-sm font-medium rounded-xl"
             >
-              <Upload className="h-3.5 w-3.5 mr-1.5" />
-              Files
+              <Upload className="h-4 w-4 mr-2" />
+              Browse Files
             </Button>
             <Button
               variant="default"
-              size="sm"
+              size="default"
               disabled={isProcessing}
               onClick={() => folderInputRef.current?.click()}
-              className="h-9 text-xs rounded-xl bg-purple-600 hover:bg-purple-700 text-white"
+              className="h-10 px-4 text-xs sm:text-sm font-medium rounded-xl bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-500/20"
             >
-              <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
-              Folder
+              <FolderOpen className="h-4 w-4 mr-2" />
+              Select Folder
             </Button>
           </div>
         </div>
 
-        {/* Processing Indicator */}
+        {/* Processing Progress Bar */}
         {isProcessing && (
-          <div className="px-4 py-2 bg-purple-500/5 border-t border-purple-500/20 flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          <div className="px-5 py-2.5 bg-purple-500/5 border-t border-purple-500/20 flex items-center gap-2.5 text-xs sm:text-sm text-purple-600 dark:text-purple-400 font-medium">
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
             <span>{processingStatus}</span>
           </div>
         )}
       </div>
 
-      {/* When Empty: Simple Clean Drop Hint */}
+      {/* WIDER & LARGER DROPBOX (When no documents loaded) */}
       {documents.length === 0 && !isProcessing && (
-        <div className="text-center py-10 px-4 border border-dashed border-border/60 rounded-2xl bg-card/40 hover:bg-card/60 transition-colors">
-          <div className="h-12 w-12 rounded-xl bg-muted flex items-center justify-center mx-auto mb-3 text-muted-foreground">
-            <FolderOpen className="h-6 w-6" />
+        <div
+          className="relative text-center py-16 sm:py-24 px-6 sm:px-12 border-2 border-dashed border-border/80 hover:border-purple-500/60 rounded-3xl bg-gradient-to-b from-card/60 via-card/30 to-card/60 hover:bg-purple-500/[0.02] transition-all duration-300 cursor-pointer shadow-sm group"
+          onClick={() => folderInputRef.current?.click()}
+        >
+          <div className="max-w-2xl mx-auto flex flex-col items-center justify-center">
+            {/* Big Prominent Icon */}
+            <div className="h-20 w-20 sm:h-24 sm:w-24 rounded-3xl bg-purple-500/10 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-6 ring-8 ring-purple-500/5 group-hover:scale-105 group-hover:ring-purple-500/10 transition-all duration-300">
+              <FolderOpen className="h-10 w-10 sm:h-12 sm:w-12" />
+            </div>
+
+            {/* Large Welcoming Title */}
+            <h3 className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+              Drag & Drop Any Files or Folder Here
+            </h3>
+
+            {/* Subtitle description */}
+            <p className="text-muted-foreground text-sm sm:text-base max-w-lg mb-8 leading-relaxed">
+              Drop entire directories or single files. We automatically extract and index text from PDFs, Word documents, Excel sheets, PowerPoint decks, code, and notes.
+            </p>
+
+            {/* Large Interactive Buttons */}
+            <div className="flex flex-wrap items-center justify-center gap-4 mb-8" onClick={(e) => e.stopPropagation()}>
+              <Button
+                size="lg"
+                className="h-12 px-6 text-sm sm:text-base font-semibold rounded-2xl bg-purple-600 hover:bg-purple-700 text-white shadow-lg shadow-purple-500/25 transition-transform active:scale-95"
+                onClick={() => folderInputRef.current?.click()}
+              >
+                <FolderOpen className="h-5 w-5 mr-2.5" />
+                Select Entire Folder
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="h-12 px-6 text-sm sm:text-base font-semibold rounded-2xl border-border/80 hover:bg-muted transition-transform active:scale-95"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="h-5 w-5 mr-2.5" />
+                Browse Multiple Files
+              </Button>
+            </div>
+
+            {/* Quick format tags pill row inside the drop box */}
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-4 border-t border-border/40 w-full text-xs text-muted-foreground">
+              <span className="font-medium mr-1">Fast multi-format support:</span>
+              <Badge variant="outline" className="text-[11px] bg-background/80">📄 PDF (with OCR)</Badge>
+              <Badge variant="outline" className="text-[11px] bg-background/80">📝 Word (.docx, .doc)</Badge>
+              <Badge variant="outline" className="text-[11px] bg-background/80">📊 Excel (.xlsx, .csv)</Badge>
+              <Badge variant="outline" className="text-[11px] bg-background/80">📈 PowerPoint (.pptx)</Badge>
+              <Badge variant="outline" className="text-[11px] bg-background/80">💻 Code & Text</Badge>
+            </div>
           </div>
-          <h3 className="text-sm font-semibold mb-1">Drop any folder or files anywhere on this page</h3>
-          <p className="text-xs text-muted-foreground max-w-sm mx-auto mb-4">
-            Supports PDF, Word, Excel, PowerPoint, Code, and Text files. All content is decoded and indexed automatically.
-          </p>
         </div>
       )}
 
@@ -376,9 +420,9 @@ export function UnifiedFileSearch() {
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 px-1">
             {/* File status tag */}
-            <div className="flex items-center gap-2 text-xs">
-              <span className="font-semibold flex items-center gap-1.5">
-                <Check className="h-3.5 w-3.5 text-green-500" />
+            <div className="flex items-center gap-2 text-xs sm:text-sm">
+              <span className="font-semibold flex items-center gap-1.5 text-foreground">
+                <Check className="h-4 w-4 text-green-500" />
                 {documents.length} file{documents.length === 1 ? "" : "s"} loaded
               </span>
               <span className="text-muted-foreground font-mono">({formatFileSize(totalSize)})</span>
@@ -395,49 +439,49 @@ export function UnifiedFileSearch() {
               <Button
                 variant="ghost"
                 size="sm"
-                className={`h-7 px-2 text-xs ${showOptions ? "text-purple-600 bg-purple-50 dark:bg-purple-950/40" : "text-muted-foreground"}`}
+                className={`h-8 px-2.5 text-xs ${showOptions ? "text-purple-600 bg-purple-50 dark:bg-purple-950/40" : "text-muted-foreground"}`}
                 onClick={() => setShowOptions(!showOptions)}
               >
-                <SlidersHorizontal className="h-3.5 w-3.5 mr-1" />
-                Options
+                <SlidersHorizontal className="h-3.5 w-3.5 mr-1.5" />
+                Search Options
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                className="h-8 px-2.5 text-xs text-muted-foreground hover:text-destructive"
                 onClick={clearAllDocuments}
               >
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                Clear
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                Clear All
               </Button>
             </div>
           </div>
 
           {/* Collapsible Options Drawer */}
           {showOptions && (
-            <div className="p-3 rounded-xl border border-border/60 bg-card/60 flex flex-wrap items-center justify-between gap-3 text-xs animate-in fade-in-50">
-              <div className="flex flex-wrap items-center gap-4">
-                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+            <div className="p-4 rounded-2xl border border-border/60 bg-card/60 flex flex-wrap items-center justify-between gap-4 text-xs animate-in fade-in-50">
+              <div className="flex flex-wrap items-center gap-5">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
                   <Switch checked={caseSensitive} onCheckedChange={setCaseSensitive} className="scale-75" />
                   <span>Case Sensitive</span>
                 </label>
-                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
                   <Switch checked={wholeWord} onCheckedChange={setWholeWord} className="scale-75" />
                   <span>Whole Word</span>
                 </label>
-                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
                   <Switch checked={useRegex} onCheckedChange={setUseRegex} className="scale-75" />
                   <span>Regex</span>
                 </label>
               </div>
 
               {/* Type Filters */}
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 {["all", "pdf", "word", "spreadsheet", "presentation", "code", "text"].map((t) => (
                   <button
                     key={t}
                     onClick={() => setTypeFilter(t)}
-                    className={`capitalize px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                    className={`capitalize px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                       typeFilter === t
                         ? "bg-purple-600 text-white"
                         : "bg-muted hover:bg-muted/80 text-muted-foreground"
@@ -452,41 +496,41 @@ export function UnifiedFileSearch() {
 
           {/* Collapsible File List Drawer */}
           {showFileList && (
-            <div className="p-3 rounded-xl border border-border/60 bg-card/60 max-h-52 overflow-y-auto space-y-1 text-xs animate-in fade-in-50">
+            <div className="p-4 rounded-2xl border border-border/60 bg-card/60 max-h-60 overflow-y-auto space-y-1.5 text-xs animate-in fade-in-50">
               {documents.map((doc) => {
                 const Icon = getIconForType(doc.type)
                 const style = getBadgeStyleForType(doc.type)
                 return (
                   <div
                     key={doc.id}
-                    className="flex items-center justify-between gap-2 p-1.5 rounded-lg hover:bg-background transition-colors"
+                    className="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-background transition-colors"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <Badge variant="outline" className={`text-[10px] px-1.5 py-0 border ${style}`}>
                         <Icon className="h-3 w-3 mr-1" />
                         {doc.extension.toUpperCase()}
                       </Badge>
-                      <span className="font-medium truncate">{doc.name}</span>
+                      <span className="font-medium truncate text-sm">{doc.name}</span>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-muted-foreground font-mono text-[10px]">
+                      <span className="text-muted-foreground font-mono text-xs">
                         {formatFileSize(doc.size)}
                       </span>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                         onClick={() => setPreviewDoc(doc)}
                       >
-                        <ExternalLink className="h-3 w-3" />
+                        <ExternalLink className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                         onClick={() => removeDocument(doc.id)}
                       >
-                        <X className="h-3 w-3" />
+                        <X className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
@@ -497,23 +541,23 @@ export function UnifiedFileSearch() {
 
           {/* Simple Tab Switcher: Search / AI */}
           <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as "search" | "ai")} className="w-full">
-            <TabsList className="grid w-full grid-cols-2 max-w-xs mx-auto mb-4 h-10 p-1 bg-muted/70 rounded-xl">
-              <TabsTrigger value="search" className="text-xs font-medium rounded-lg">
-                <Search className="h-3.5 w-3.5 mr-1.5" />
-                Search
+            <TabsList className="grid w-full grid-cols-2 max-w-sm mx-auto mb-6 h-11 p-1 bg-muted/70 rounded-2xl">
+              <TabsTrigger value="search" className="text-xs sm:text-sm font-medium rounded-xl">
+                <Search className="h-4 w-4 mr-2" />
+                Search Content
               </TabsTrigger>
-              <TabsTrigger value="ai" className="text-xs font-medium rounded-lg">
-                <Sparkles className="h-3.5 w-3.5 mr-1.5 text-purple-500" />
+              <TabsTrigger value="ai" className="text-xs sm:text-sm font-medium rounded-xl">
+                <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
                 AI Assistant
               </TabsTrigger>
             </TabsList>
 
             {/* TAB 1: INSTANT KEYWORD SEARCH */}
-            <TabsContent value="search" className="space-y-3">
+            <TabsContent value="search" className="space-y-4">
               {searchQuery.trim() ? (
                 searchResults.length > 0 ? (
-                  <div className="space-y-2.5">
-                    <div className="text-xs text-muted-foreground font-medium px-1">
+                  <div className="space-y-3">
+                    <div className="text-xs sm:text-sm text-muted-foreground font-medium px-1">
                       Found {searchResults.length} match{searchResults.length === 1 ? "" : "es"} across{" "}
                       {new Set(searchResults.map((r) => r.documentId)).size} file
                       {new Set(searchResults.map((r) => r.documentId)).size === 1 ? "" : "s"}
@@ -524,22 +568,22 @@ export function UnifiedFileSearch() {
                       const style = getBadgeStyleForType(match.documentType)
 
                       return (
-                        <Card key={match.id} className="border border-border/70 bg-card/80 hover:border-purple-500/30 transition-all">
-                          <CardContent className="p-3.5 space-y-2">
+                        <Card key={match.id} className="border border-border/70 bg-card/80 hover:border-purple-500/30 transition-all rounded-2xl">
+                          <CardContent className="p-4 space-y-2.5">
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-2 min-w-0">
-                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 border ${style}`}>
+                                <Badge variant="outline" className={`text-[10px] px-1.5 py-0.5 border ${style}`}>
                                   <Icon className="h-3 w-3 mr-1" />
                                   {match.extension.toUpperCase()}
                                 </Badge>
-                                <span className="font-semibold text-xs sm:text-sm truncate">{match.documentName}</span>
+                                <span className="font-semibold text-sm truncate">{match.documentName}</span>
                                 {match.pageOrSection && (
-                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                  <Badge variant="secondary" className="text-[10px] px-2 py-0.5 font-medium">
                                     {match.pageOrSection}
                                   </Badge>
                                 )}
                                 {match.lineNumber && (
-                                  <span className="text-[11px] text-muted-foreground font-mono">
+                                  <span className="text-xs text-muted-foreground font-mono">
                                     Line {match.lineNumber}
                                   </span>
                                 )}
@@ -548,25 +592,25 @@ export function UnifiedFileSearch() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground rounded-lg"
                                 onClick={() => copySnippet(match.id, match.fullSnippet)}
                               >
                                 {copiedId === match.id ? (
                                   <>
-                                    <Check className="h-3 w-3 mr-1 text-green-500" /> Copied
+                                    <Check className="h-3.5 w-3.5 mr-1 text-green-500" /> Copied
                                   </>
                                 ) : (
                                   <>
-                                    <Copy className="h-3 w-3 mr-1" /> Copy
+                                    <Copy className="h-3.5 w-3.5 mr-1" /> Copy
                                   </>
                                 )}
                               </Button>
                             </div>
 
                             {/* Snippet */}
-                            <div className="p-2.5 rounded-lg bg-muted/60 font-mono text-xs text-foreground/90 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                            <div className="p-3 rounded-xl bg-muted/60 font-mono text-xs sm:text-sm text-foreground/90 overflow-x-auto whitespace-pre-wrap leading-relaxed">
                               <span>{match.beforeContext}</span>
-                              <mark className="bg-yellow-300/40 dark:bg-yellow-500/30 text-foreground font-semibold px-0.5 rounded">
+                              <mark className="bg-yellow-300/40 dark:bg-yellow-500/30 text-foreground font-semibold px-1 rounded">
                                 {match.matchText}
                               </mark>
                               <span>{match.afterContext}</span>
@@ -577,12 +621,12 @@ export function UnifiedFileSearch() {
                     })}
                   </div>
                 ) : (
-                  <div className="py-10 text-center text-muted-foreground text-xs">
+                  <div className="py-12 text-center text-muted-foreground text-sm">
                     No matches found for "{searchQuery}". Try relaxing search filters.
                   </div>
                 )
               ) : (
-                <div className="py-8 text-center text-muted-foreground text-xs">
+                <div className="py-10 text-center text-muted-foreground text-sm">
                   Type a keyword in the search bar above to instantly find matches in all loaded files.
                 </div>
               )}
@@ -590,7 +634,7 @@ export function UnifiedFileSearch() {
 
             {/* TAB 2: AI ASSISTANT */}
             <TabsContent value="ai">
-              <div className="min-h-[500px]">
+              <div className="min-h-[520px]">
                 <AISearchChat getDocuments={getRagDocuments} hasDocuments={documents.length > 0} />
               </div>
             </TabsContent>
@@ -601,20 +645,20 @@ export function UnifiedFileSearch() {
       {/* Document Quick Preview Modal */}
       {previewDoc && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <Card className="w-full max-w-2xl max-h-[80vh] flex flex-col bg-background border shadow-2xl rounded-2xl">
-            <div className="flex items-center justify-between p-3.5 border-b">
+          <Card className="w-full max-w-3xl max-h-[80vh] flex flex-col bg-background border shadow-2xl rounded-3xl">
+            <div className="flex items-center justify-between p-4 border-b">
               <div className="flex items-center gap-2 min-w-0">
                 <Badge variant="outline" className={`text-xs ${getBadgeStyleForType(previewDoc.type)}`}>
                   {previewDoc.extension.toUpperCase()}
                 </Badge>
-                <span className="font-semibold text-sm truncate">{previewDoc.name}</span>
+                <span className="font-semibold text-base truncate">{previewDoc.name}</span>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setPreviewDoc(null)} className="h-7 w-7 p-0">
+              <Button variant="ghost" size="sm" onClick={() => setPreviewDoc(null)} className="h-8 w-8 p-0 rounded-full">
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <CardContent className="flex-1 overflow-y-auto p-4">
-              <pre className="text-xs font-mono whitespace-pre-wrap leading-relaxed text-foreground/90">
+            <CardContent className="flex-1 overflow-y-auto p-5">
+              <pre className="text-xs sm:text-sm font-mono whitespace-pre-wrap leading-relaxed text-foreground/90">
                 {previewDoc.content || "[No text content]"}
               </pre>
             </CardContent>
