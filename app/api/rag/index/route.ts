@@ -1,3 +1,4 @@
+import "@/lib/dom-polyfills"
 import { NextRequest, NextResponse } from "next/server"
 import { getUploadedIndexJob, indexDocuments, startUploadedIndex } from "@/lib/rag-store"
 import type { RagDocumentInput } from "@/lib/rag-types"

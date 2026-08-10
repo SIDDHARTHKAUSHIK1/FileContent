@@ -1,3 +1,4 @@
+import "@/lib/dom-polyfills"
 import { NextRequest, NextResponse } from "next/server"
 import { hasRagApiKey, retrieveDocumentContext } from "@/lib/rag-store"
 import { generateNvidiaAnswer } from "@/lib/nvidia-api"
