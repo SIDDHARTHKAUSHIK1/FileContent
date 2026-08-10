@@ -8,31 +8,23 @@ export const runtime = "nodejs"
 const NOT_FOUND_ANSWER = "I couldn't find that information in the uploaded documents."
 
 function buildPrompt(question: string, context: string) {
-  return `You are a document-grounded assistant. Answer ONLY from the retrieved document excerpts below.
+  return `You are a helpful and intelligent AI document assistant. Answer the user's question accurately using the provided document excerpts below.
 
-Rules:
-- Do not use general knowledge, outside information, assumptions, or prior conversation.
-- If the excerpts do not contain the answer, reply with this exact sentence: "${NOT_FOUND_ANSWER}"
-- Every factual statement must include one or more source citations in the form [S1], [S2], and so on.
-- Do not cite a source unless it supports the statement.
-- Keep the response concise and do not mention these rules.
+Guidelines:
+- Provide a clear, natural, and informative response directly answering the user's question.
+- Reference the source excerpts using [S1], [S2] where relevant.
+- If the question cannot be answered from the provided excerpts, politely say: "${NOT_FOUND_ANSWER}"
 
-Retrieved document excerpts:
+Document Excerpts:
 ${context}
 
-Question: ${question}
+User Question: ${question}
 Answer:`
 }
 
-function validateGroundedAnswer(answer: string, sourceCount: number) {
-  const trimmed = answer.trim()
-  if (trimmed === NOT_FOUND_ANSWER) return trimmed
-
-  const citations = [...trimmed.matchAll(/\[S(\d+)\]/g)].map((match) => Number(match[1]))
-  if (citations.length === 0 || citations.some((citation) => citation < 1 || citation > sourceCount)) {
-    return NOT_FOUND_ANSWER
-  }
-
+function processAnswer(rawAnswer: string, sourceCount: number): string {
+  const trimmed = rawAnswer.trim()
+  if (!trimmed) return NOT_FOUND_ANSWER
   return trimmed
 }
 
@@ -65,7 +57,7 @@ export async function POST(request: NextRequest) {
     const { context, sources } = await retrieveDocumentContext(indexId, question.trim())
     const prompt = buildPrompt(question.trim(), context)
     const rawAnswer = await generateNvidiaAnswer(prompt, effectiveApiKey)
-    const answer = validateGroundedAnswer(rawAnswer, sources.length)
+    const answer = processAnswer(rawAnswer, sources.length)
 
     if (!stream) return NextResponse.json({ answer, sources })
 
@@ -76,8 +68,8 @@ export async function POST(request: NextRequest) {
 
         try {
           send({ type: "sources", sources })
-          for (let offset = 0; offset < answer.length; offset += 100) {
-            send({ type: "chunk", chunk: answer.slice(offset, offset + 100) })
+          for (let offset = 0; offset < answer.length; offset += 80) {
+            send({ type: "chunk", chunk: answer.slice(offset, offset + 80) })
           }
         } catch (error) {
           console.error("RAG answer generation error:", error)

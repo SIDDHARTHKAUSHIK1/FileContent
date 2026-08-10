@@ -1,7 +1,8 @@
 import { Embeddings } from "@langchain/core/embeddings"
 
 const NVIDIA_API_BASE_URL = (process.env.NVIDIA_API_BASE_URL || "https://integrate.api.nvidia.com/v1").replace(/\/$/, "")
-const DEFAULT_CHAT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
+const DEFAULT_CHAT_MODEL = "meta/llama-3.1-70b-instruct"
+const FALLBACK_CHAT_MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
 const DEFAULT_EMBEDDING_MODEL = "nvidia/nv-embedqa-e5-v5"
 
 type NvidiaChatResponse = {
@@ -54,24 +55,47 @@ async function nvidiaRequest<T>(path: string, body: Record<string, unknown>, api
 }
 
 export async function generateNvidiaAnswer(prompt: string, apiKeyOverride?: string): Promise<string> {
-  const data = await nvidiaRequest<NvidiaChatResponse>(
-    "/chat/completions",
-    {
-      model: process.env.NVIDIA_CHAT_MODEL || DEFAULT_CHAT_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0,
-      top_p: 0.95,
-      max_tokens: 2_048,
-      chat_template_kwargs: { enable_thinking: false },
-    },
-    apiKeyOverride,
-  )
+  const primaryModel = process.env.NVIDIA_CHAT_MODEL || DEFAULT_CHAT_MODEL
 
-  const content = data.choices?.[0]?.message?.content
-  if (typeof content === "string" && content.trim()) return content
-  if (Array.isArray(content)) {
-    const text = content.map((part) => part.text || "").join("").trim()
-    if (text) return text
+  try {
+    const data = await nvidiaRequest<NvidiaChatResponse>(
+      "/chat/completions",
+      {
+        model: primaryModel,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        top_p: 0.95,
+        max_tokens: 2_048,
+      },
+      apiKeyOverride,
+    )
+
+    const content = data.choices?.[0]?.message?.content
+    if (typeof content === "string" && content.trim()) return content.trim()
+    if (Array.isArray(content)) {
+      const text = content.map((part) => part.text || "").join("").trim()
+      if (text) return text
+    }
+  } catch (primaryErr) {
+    console.warn("Primary model failed, trying fallback model:", primaryErr)
+    const fallbackData = await nvidiaRequest<NvidiaChatResponse>(
+      "/chat/completions",
+      {
+        model: FALLBACK_CHAT_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        top_p: 0.95,
+        max_tokens: 2_048,
+      },
+      apiKeyOverride,
+    )
+
+    const fallbackContent = fallbackData.choices?.[0]?.message?.content
+    if (typeof fallbackContent === "string" && fallbackContent.trim()) return fallbackContent.trim()
+    if (Array.isArray(fallbackContent)) {
+      const text = fallbackContent.map((part) => part.text || "").join("").trim()
+      if (text) return text
+    }
   }
 
   throw new Error("NVIDIA returned an empty response.")
