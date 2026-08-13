@@ -219,19 +219,84 @@ export class UnifiedDocumentParser {
     })
   }
 
+  private static reconstructPdfText(items: any[]): string {
+  if (!items || items.length === 0) return ""
+
+  const lines: string[] = []
+  let currentLine = ""
+  let lastY: number | null = null
+  let lastX: number | null = null
+  let lastWidth: number | null = null
+
+  for (const item of items) {
+    if (!item || typeof item.str !== "string") continue
+    const str = item.str
+    if (!str && !item.hasEOL) continue
+
+    const transform = item.transform
+    const currentX = transform ? transform[4] : null
+    const currentY = transform ? transform[5] : null
+
+    // Vertical shift detection for new line
+    const isNewLine = lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 3
+
+    if (isNewLine) {
+      if (currentLine.trim()) {
+        lines.push(currentLine.trim())
+      }
+      currentLine = ""
+      lastX = null
+      lastWidth = null
+    } else if (lastX !== null && currentX !== null && lastWidth !== null) {
+      const gap = currentX - (lastX + lastWidth)
+      if (gap > 2 && !currentLine.endsWith(" ") && !str.startsWith(" ")) {
+        currentLine += " "
+      }
+    }
+
+    currentLine += str
+
+    if (item.hasEOL) {
+      if (currentLine.trim()) {
+        lines.push(currentLine.trim())
+      }
+      currentLine = ""
+      lastX = null
+      lastWidth = null
+    } else {
+      lastX = currentX
+      lastWidth = item.width || 0
+    }
+
+    lastY = currentY
+  }
+
+  if (currentLine.trim()) {
+    lines.push(currentLine.trim())
+  }
+
+  return lines
+    .join("\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s+\n/g, "\n\n")
+    .trim()
+}
+
   private static async parsePdf(file: File): Promise<{ content: string; pages: ParsedPage[] }> {
     const arrayBuffer = await file.arrayBuffer()
     const pdfjs = await import("pdfjs-dist")
     
-    if (typeof window !== "undefined" && "Worker" in window && !pdfjs.GlobalWorkerOptions.workerSrc) {
-      pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js"
+    if (typeof window !== "undefined" && "Worker" in window) {
+      if (pdfjs.GlobalWorkerOptions) {
+        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js"
+      }
     }
 
     const pdf = await pdfjs.getDocument({
-      data: arrayBuffer,
-      useSystemFonts: true,
-      disableFontFace: true,
-      isEvalSupported: false,
+      data: new Uint8Array(arrayBuffer),
+      cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version || "5.3.93"}/cmaps/`,
+      cMapPacked: true,
+      standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version || "5.3.93"}/standard_fonts/`,
       verbosity: 0,
     }).promise
 
@@ -240,10 +305,10 @@ export class UnifiedDocumentParser {
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum)
       const textContent = await page.getTextContent()
-      let pageText = textContent.items.map((item: any) => item.str || "").join(" ").trim()
+      let pageText = this.reconstructPdfText(textContent.items)
 
-      // Lazy OCR: only attempt OCR if page has absolutely zero selectable text
-      if (pageText.length === 0 && typeof window !== "undefined") {
+      // Lazy OCR: run OCR if page has virtually no text (< 20 chars, e.g. scanned images)
+      if (pageText.length < 20 && typeof window !== "undefined") {
         try {
           const tesseract = (await import("tesseract.js")).default
           const viewport = page.getViewport({ scale: 1.5 })
@@ -255,7 +320,7 @@ export class UnifiedDocumentParser {
             await page.render({ canvasContext: ctx, viewport }).promise
             const ocrResult = await tesseract.recognize(canvas.toDataURL(), "eng")
             if (ocrResult.data?.text?.trim()) {
-              pageText = ocrResult.data.text.trim()
+              pageText = (pageText + "\n" + ocrResult.data.text.trim()).trim()
             }
           }
         } catch (ocrErr) {
