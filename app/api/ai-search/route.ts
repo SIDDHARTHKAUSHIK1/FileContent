@@ -1,7 +1,8 @@
 import "@/lib/dom-polyfills"
 import { NextRequest, NextResponse } from "next/server"
-import { hasRagApiKey, retrieveDocumentContext } from "@/lib/rag-store"
-import { generateNvidiaAnswer } from "@/lib/nvidia-api"
+import { executeAiQuery, extractRelevantExcerpts, getEffectiveKey } from "@/lib/universal-ai"
+import { retrieveDocumentContext } from "@/lib/rag-store"
+import type { RagDocumentInput, RagSource } from "@/lib/rag-types"
 
 export const runtime = "nodejs"
 
@@ -22,58 +23,97 @@ User Question: ${question}
 Answer:`
 }
 
-function processAnswer(rawAnswer: string, sourceCount: number): string {
-  const trimmed = rawAnswer.trim()
-  if (!trimmed) return NOT_FOUND_ANSWER
-  return trimmed
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const headerKey = request.headers.get("x-nvidia-api-key") || undefined
-    const { question, indexId, stream = false, apiKey } = (await request.json()) as {
+    const headerKey =
+      request.headers.get("x-nvidia-api-key") ||
+      request.headers.get("x-gemini-api-key") ||
+      request.headers.get("x-api-key") ||
+      undefined
+
+    const body = (await request.json()) as {
       question?: string
+      documents?: RagDocumentInput[]
+      content?: string
       indexId?: string
       stream?: boolean
       apiKey?: string
     }
+
+    const { question, documents, content, indexId, stream = false, apiKey } = body
     const effectiveApiKey = headerKey || apiKey
 
     if (!question?.trim()) {
       return NextResponse.json({ error: "Question is required." }, { status: 400 })
     }
 
-    if (!indexId) {
-      return NextResponse.json({ error: "Upload and index documents before asking a question." }, { status: 400 })
-    }
-
-    if (!hasRagApiKey(effectiveApiKey)) {
+    const { key, provider } = getEffectiveKey(effectiveApiKey)
+    if (!key) {
       return NextResponse.json(
-        { error: "NVIDIA_API_KEY is not set. Please add it in Vercel Project Settings or enter it in the AI settings." },
-        { status: 500 },
+        {
+          error:
+            "No AI API Key found. Please enter your Google Gemini API key (AIzaSy...) or NVIDIA/OpenAI key in the AI Assistant settings.",
+        },
+        { status: 401 }
       )
     }
 
-    const { context, sources } = await retrieveDocumentContext(indexId, question.trim())
-    const prompt = buildPrompt(question.trim(), context)
-    const rawAnswer = await generateNvidiaAnswer(prompt, effectiveApiKey)
-    const answer = processAnswer(rawAnswer, sources.length)
+    let context = ""
+    let sources: RagSource[] = []
 
-    if (!stream) return NextResponse.json({ answer, sources })
+    // 1. Direct document excerpts (avoids 413 and stateless serverless index expiration)
+    if (documents && Array.isArray(documents) && documents.length > 0) {
+      const extracted = extractRelevantExcerpts(documents, question.trim())
+      context = extracted.context
+      sources = extracted.sources
+    } else if (content && typeof content === "string" && content.trim()) {
+      const singleDoc: RagDocumentInput[] = [
+        { id: "doc-1", name: "Document Content", content: content },
+      ]
+      const extracted = extractRelevantExcerpts(singleDoc, question.trim())
+      context = extracted.context
+      sources = extracted.sources
+    } else if (indexId) {
+      try {
+        const retrieved = await retrieveDocumentContext(indexId, question.trim())
+        context = retrieved.context
+        sources = retrieved.sources
+      } catch (ragErr) {
+        console.warn("RAG index retrieval fallback:", ragErr)
+      }
+    }
+
+    if (!context.trim()) {
+      context = "No specific document excerpts provided. Please answer based on general knowledge."
+    }
+
+    const prompt = buildPrompt(question.trim(), context)
+    const rawAnswer = await executeAiQuery(prompt, effectiveApiKey)
+    const answer = rawAnswer.trim() || NOT_FOUND_ANSWER
+
+    if (!stream) {
+      return NextResponse.json({ answer, sources, provider })
+    }
 
     const encoder = new TextEncoder()
     const streamResponse = new ReadableStream({
       async start(controller) {
-        const send = (payload: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
+        const send = (payload: unknown) =>
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
 
         try {
-          send({ type: "sources", sources })
-          for (let offset = 0; offset < answer.length; offset += 80) {
-            send({ type: "chunk", chunk: answer.slice(offset, offset + 80) })
+          send({ type: "sources", sources, provider })
+          // Stream chunks smoothly
+          const chunkSize = 60
+          for (let offset = 0; offset < answer.length; offset += chunkSize) {
+            send({ type: "chunk", chunk: answer.slice(offset, offset + chunkSize) })
           }
         } catch (error) {
-          console.error("RAG answer generation error:", error)
-          send({ type: "error", error: "The AI could not generate a document-grounded answer. Please try again." })
+          console.error("AI answer streaming error:", error)
+          send({
+            type: "error",
+            error: "The AI could not generate a document-grounded answer. Please try again.",
+          })
         } finally {
           send({ type: "done" })
           controller.close()
@@ -88,10 +128,10 @@ export async function POST(request: NextRequest) {
         Connection: "keep-alive",
       },
     })
-  } catch (error) {
-    console.error("RAG AI search error:", error)
-    const message = error instanceof Error ? error.message : "Unable to answer from the uploaded documents."
-    const status = error instanceof Error && error.name === "RagIndexNotFoundError" ? 410 : 500
-    return NextResponse.json({ error: message }, { status })
+  } catch (error: any) {
+    console.error("AI search route error:", error)
+    const message =
+      error instanceof Error ? error.message : "Unable to generate answer from the documents."
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -3,12 +3,15 @@ export interface RagDocumentInput {
   name: string
   content: string
   path?: string
+  type?: string
 }
 
 export interface RagSource {
+  id?: string
   documentId: string
   name: string
   path?: string
   chunk: number
   score: number
+  snippet?: string
 }
