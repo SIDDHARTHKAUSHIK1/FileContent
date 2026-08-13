@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, FileText, File, Code, Loader2, Moon, Sun, AlertCircle, Info, ArrowLeft } from "lucide-react"
+import { Search, FileText, File, Code, Loader2, Moon, Sun, AlertCircle, Info, ArrowLeft, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,8 +12,9 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import FolderSelector from "@/components/folder-selector"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import AISearchChat from "@/components/ai-search-chat";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import AISearchChat from "@/components/ai-search-chat"
+import type { RagDocumentInput } from "@/lib/rag-types"
 
 interface SearchResult {
   file: string
@@ -89,10 +90,7 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
     "jsx",
   ])
   const [showFilters, setShowFilters] = useState(false)
-  const [aiQuestion, setAiQuestion] = useState("");
-  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
+  const [uploadedDocuments, setUploadedDocuments] = useState<RagDocumentInput[]>([])
 
   const fileTypes = [
     { id: "txt", label: "Text", icon: FileText },
@@ -110,7 +108,7 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
 
   const allowedExts = [
     "txt", "md", "html", "js", "jsx", "ts", "tsx", "py", "json", "csv", "java"
-  ];
+  ]
 
   useEffect(() => {
     if (darkMode) {
@@ -135,16 +133,16 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
 
       // Check for unsupported file formats
       const unsupported = selectedFiles.some((file: any) => {
-        const ext = file.name.toLowerCase().split(".").pop();
-        return !allowedExts.includes(ext || "");
-      });
+        const ext = file.name.toLowerCase().split(".").pop()
+        return !allowedExts.includes(ext || "")
+      })
       if (unsupported) {
-        setError("Unsupported File Format");
-        setResults([]);
-        setStats(null);
-        setDebugInfo([]);
-        setLoading(false);
-        return;
+        setError("Unsupported File Format")
+        setResults([])
+        setStats(null)
+        setDebugInfo([])
+        setLoading(false)
+        return
       }
 
       const response = await fetch("/api/search-multi", {
@@ -204,34 +202,6 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
     return FILE_TYPE_COLORS[fileType as keyof typeof FILE_TYPE_COLORS] || FILE_TYPE_COLORS.default
   }
 
-  // Concatenate all file contents for AI context
-  const allFileContents = results.map(r => r.matched_text).join("\n\n");
-
-  const handleAISearch = async () => {
-    setAiLoading(true);
-    setAiError(null);
-    setAiAnswer(null);
-    try {
-      const res = await fetch("/api/ai-search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: aiQuestion, content: allFileContents }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        setAiError(err.error || "Unknown error");
-        setAiLoading(false);
-        return;
-      }
-      const data = await res.json();
-      setAiAnswer(data.answer);
-    } catch (err: any) {
-      setAiError(err.message || "Error with AI search");
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-background transition-colors duration-300">
       {/* Header */}
@@ -254,7 +224,11 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
             <FolderSelector
               selectedFolder={selectedFolder}
               onFolderSelect={(folderName) => setSelectedFolder(folderName)}
-              onFolderClear={() => setSelectedFolder("")}
+              onFolderClear={() => {
+                setSelectedFolder("")
+                setUploadedDocuments([])
+              }}
+              onDocumentsLoaded={setUploadedDocuments}
             />
           </div>
 
@@ -330,7 +304,10 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
           <Tabs defaultValue="search">
             <TabsList className="mb-4">
               <TabsTrigger value="search">Search</TabsTrigger>
-              <TabsTrigger value="ai">AI Search</TabsTrigger>
+              <TabsTrigger value="ai" className="flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4 text-purple-500" />
+                AI Search
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="search">
               {error && (
@@ -440,9 +417,7 @@ export default function MultiFileSearch({ onBack }: MultiFileSearchProps) {
             </TabsContent>
             <TabsContent value="ai">
               <div className="h-[calc(100vh-300px)]">
-                <AISearchChat 
-                  fileContent={allFileContents}
-                />
+                <AISearchChat documents={uploadedDocuments} />
               </div>
             </TabsContent>
           </Tabs>

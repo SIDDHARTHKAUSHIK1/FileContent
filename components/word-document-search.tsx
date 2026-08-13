@@ -1,16 +1,14 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useCallback, useMemo } from "react"
-import { ArrowLeft, Upload, FileText, Zap } from "lucide-react"
+import { ArrowLeft, Upload, FileText, Zap, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { DocumentParser, type DocumentLayout, type SearchMatch } from "@/lib/document-parser"
-import AdvancedSearch from "@/components/advanced-search"
 import DocumentViewer from "@/components/document-viewer"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import AISearchChat from "@/components/ai-search-chat"
 
 interface WordDocumentSearchProps {
   onBack: () => void
@@ -26,7 +24,7 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const supportedTypes = [".docx", ".doc", ""];
+  const supportedTypes = [".docx", ".doc"]
 
   const handleFileUpload = useCallback(async (file: File) => {
     setIsProcessing(true)
@@ -34,21 +32,14 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
 
     // File type validation
     if (!supportedTypes.some(type => file.name.toLowerCase().endsWith(type))) {
-      setError("Unsupported File Format");
-      setIsProcessing(false);
-      return;
+      setError("Unsupported File Format")
+      setIsProcessing(false)
+      return
     }
-
-
 
     try {
       console.log(`Processing document: ${file.name}`)
       const layout = await DocumentParser.parseDocument(file)
-
-      console.log(`Document processed successfully:`)
-      console.log(`- Pages: ${layout.totalPages}`)
-      console.log(`- Words: ${layout.wordCount}`)
-      console.log(`- Sections: ${layout.sections.length}`)
 
       setDocumentLayouts((prev) => [...prev, { fileName: file.name, layout }])
       setCurrentMatch(null)
@@ -73,7 +64,7 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
       })
 
       if (validFiles.length === 0) {
-        setError("Unsupported File Format");
+        setError("Unsupported File Format")
         return
       }
 
@@ -95,7 +86,7 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
       })
 
       if (validFiles.length === 0) {
-        setError("Unsupported File Format");
+        setError("Unsupported File Format")
         return
       }
 
@@ -106,10 +97,8 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
     [handleFileUpload],
   )
 
-  // New search query state
   const [searchQuery, setSearchQuery] = useState("")
 
-  // Search function to run across all documents
   const handleSearch = useCallback(() => {
     if (!searchQuery.trim()) {
       setSearchResults([])
@@ -136,19 +125,22 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
     setCurrentMatch(results.length > 0 ? results[0].matches[0] : null)
   }, [documentLayouts, searchQuery])
 
-  const handleMatchSelect = useCallback(
-    (match: SearchMatch) => {
-      setCurrentMatch(match)
-    },
-    []
-  )
-
   const handleFileChange = useCallback(
     (index: number) => {
       setSelectedFileIndex(index)
       setCurrentMatch(searchResults[index].matches[0])
     },
-    [searchResults]
+    [searchResults],
+  )
+
+  const ragDocuments = useMemo(
+    () =>
+      documentLayouts.map(({ fileName, layout }, index) => ({
+        id: `${fileName}-${index}`,
+        name: fileName,
+        content: layout.text,
+      })),
+    [documentLayouts],
   )
 
   return (
@@ -157,6 +149,10 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
         <Tabs defaultValue="search">
           <TabsList className="mb-4">
             <TabsTrigger value="search">Search</TabsTrigger>
+            <TabsTrigger value="ai" className="flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-purple-500" />
+              AI Search
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="search">
             <div className="mb-6">
@@ -190,7 +186,7 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
                     <input
                       id="file-input"
                       type="file"
-                      accept=".doc,.docx,"
+                      accept=".doc,.docx"
                       onChange={handleFileSelect}
                       className="hidden"
                       multiple
@@ -214,7 +210,7 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
                           {isProcessing ? "Processing document(s)..." : "Upload documents or folders to search"}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          Supports .doc, .docx, and  files. Drag and drop or click to browse folders.
+                          Supports .doc and .docx files. Drag and drop or click to browse folders.
                         </p>
                       </div>
                     </div>
@@ -277,9 +273,8 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
                   </Button>
                 </div>
 
-                {/* Search Panel */}
+                {/* Document Viewer */}
                 <div className="lg:col-span-2 space-y-4">
-                  {/* Removed AdvancedSearch component as per request */}
                   <DocumentViewer
                     documentLayout={searchResults[selectedFileIndex].layout}
                     currentMatch={currentMatch}
@@ -295,6 +290,11 @@ export default function WordDocumentSearch({ onBack }: WordDocumentSearchProps) 
                 No files contain the searched keywords.
               </div>
             )}
+          </TabsContent>
+          <TabsContent value="ai">
+            <div className="h-[calc(100vh-180px)]">
+              <AISearchChat documents={ragDocuments} />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

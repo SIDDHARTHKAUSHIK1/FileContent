@@ -1,92 +1,97 @@
-import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import "@/lib/dom-polyfills"
+import { NextRequest, NextResponse } from "next/server"
+import { hasRagApiKey, retrieveDocumentContext } from "@/lib/rag-store"
+import { generateNvidiaAnswer } from "@/lib/nvidia-api"
 
-// Use edge runtime for reliable streaming on Vercel
-export const runtime = "edge";
+export const runtime = "nodejs"
 
-// Initialize the Google Generative AI instance
-// This requires the GEMINI_API_KEY environment variable to be set
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+const NOT_FOUND_ANSWER = "I couldn't find that information in the uploaded documents."
 
-export async function POST(req: NextRequest) {
+function buildPrompt(question: string, context: string) {
+  return `You are a helpful and intelligent AI document assistant. Answer the user's question accurately using the provided document excerpts below.
+
+Guidelines:
+- Provide a clear, natural, and informative response directly answering the user's question.
+- Reference the source excerpts using [S1], [S2] where relevant.
+- If the question cannot be answered from the provided excerpts, politely say: "${NOT_FOUND_ANSWER}"
+
+Document Excerpts:
+${context}
+
+User Question: ${question}
+Answer:`
+}
+
+function processAnswer(rawAnswer: string, sourceCount: number): string {
+  const trimmed = rawAnswer.trim()
+  if (!trimmed) return NOT_FOUND_ANSWER
+  return trimmed
+}
+
+export async function POST(request: NextRequest) {
   try {
-    const { question, content, stream = false } = await req.json();
-    
-    if (!question || !question.trim()) {
-      return NextResponse.json({ error: "Question is required" }, { status: 400 });
+    const headerKey = request.headers.get("x-nvidia-api-key") || undefined
+    const { question, indexId, stream = false, apiKey } = (await request.json()) as {
+      question?: string
+      indexId?: string
+      stream?: boolean
+      apiKey?: string
+    }
+    const effectiveApiKey = headerKey || apiKey
+
+    if (!question?.trim()) {
+      return NextResponse.json({ error: "Question is required." }, { status: 400 })
     }
 
-    // Check if API key is configured
-    if (!process.env.GEMINI_API_KEY) {
+    if (!indexId) {
+      return NextResponse.json({ error: "Upload and index documents before asking a question." }, { status: 400 })
+    }
+
+    if (!hasRagApiKey(effectiveApiKey)) {
       return NextResponse.json(
-        { error: "GEMINI_API_KEY environment variable is not set. Please configure it in your Vercel deployment or .env.local file." }, 
-        { status: 500 }
-      );
+        { error: "NVIDIA_API_KEY is not set. Please add it in Vercel Project Settings or enter it in the AI settings." },
+        { status: 500 },
+      )
     }
 
-    // Use provided content or fallback to general knowledge prompt
-    const contentToAnalyze = content && content.trim() 
-      ? content 
-      : "No specific file content provided. Please answer based on your general knowledge.";
+    const { context, sources } = await retrieveDocumentContext(indexId, question.trim())
+    const prompt = buildPrompt(question.trim(), context)
+    const rawAnswer = await generateNvidiaAnswer(prompt, effectiveApiKey)
+    const answer = processAnswer(rawAnswer, sources.length)
 
-    // Use modern gemini-2.5-flash which is fast, cheap/free, and has a 1 million token context window.
-    // This entirely removes the need for manual chunking that was required by local Ollama models.
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    if (!stream) return NextResponse.json({ answer, sources })
 
-    const prompt = `Answer the following question based on the provided content. Be concise, direct, and helpful.
+    const encoder = new TextEncoder()
+    const streamResponse = new ReadableStream({
+      async start(controller) {
+        const send = (payload: unknown) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
 
-Content:
-${contentToAnalyze}
-
-Question:
-${question}
-
-Answer:`;
-
-    if (stream) {
-      const encoder = new TextEncoder();
-      
-      const streamResponse = new ReadableStream({
-        async start(controller) {
-          try {
-            const result = await model.generateContentStream(prompt);
-
-            for await (const chunk of result.stream) {
-              const chunkText = chunk.text();
-              if (chunkText) {
-                // Ensure text is properly JSON encoded before sending
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`)
-                );
-              }
-            }
-            
-            // Signal completion to the frontend
-            controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-            controller.close();
-          } catch (error: any) {
-            console.error("Gemini stream error:", error);
-            controller.error(error);
+        try {
+          send({ type: "sources", sources })
+          for (let offset = 0; offset < answer.length; offset += 80) {
+            send({ type: "chunk", chunk: answer.slice(offset, offset + 80) })
           }
-        },
-      });
+        } catch (error) {
+          console.error("RAG answer generation error:", error)
+          send({ type: "error", error: "The AI could not generate a document-grounded answer. Please try again." })
+        } finally {
+          send({ type: "done" })
+          controller.close()
+        }
+      },
+    })
 
-      return new Response(streamResponse, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
-      });
-    } else {
-      // Non-streaming response
-      const result = await model.generateContent(prompt);
-      const responseText = result.response.text();
-
-      return NextResponse.json({ answer: responseText.trim() });
-    }
-  } catch (e: any) {
-    console.error("API route error:", e);
-    return NextResponse.json({ error: e.message || "An error occurred" }, { status: 500 });
+    return new Response(streamResponse, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    })
+  } catch (error) {
+    console.error("RAG AI search error:", error)
+    const message = error instanceof Error ? error.message : "Unable to answer from the uploaded documents."
+    const status = error instanceof Error && error.name === "RagIndexNotFoundError" ? 410 : 500
+    return NextResponse.json({ error: message }, { status })
   }
 }
