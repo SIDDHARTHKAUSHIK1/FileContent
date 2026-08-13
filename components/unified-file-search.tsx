@@ -20,6 +20,8 @@ import {
   SlidersHorizontal,
   UploadCloud,
   ChevronDown,
+  Eye,
+  BookOpen,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -101,7 +103,36 @@ export function UnifiedFileSearch() {
   // Document management
   const [showFileList, setShowFileList] = useState(false)
   const [previewDoc, setPreviewDoc] = useState<UnifiedDocument | null>(null)
+  const [previewPageNumber, setPreviewPageNumber] = useState<number | "all">("all")
+  const [previewFilterText, setPreviewFilterText] = useState<string>("")
+  const [previewCopied, setPreviewCopied] = useState<boolean>(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const openDocPreview = (match: SearchMatchItem) => {
+    const foundDoc = documents.find(
+      (d) => d.id === match.documentId || d.name === match.documentName
+    )
+    if (foundDoc) {
+      setPreviewDoc(foundDoc)
+      setPreviewFilterText(searchQuery)
+      if (match.pageOrSection) {
+        const pageMatch = match.pageOrSection.match(/Page\s+(\d+)/i)
+        if (pageMatch) {
+          setPreviewPageNumber(parseInt(pageMatch[1], 10))
+        } else {
+          setPreviewPageNumber("all")
+        }
+      } else {
+        setPreviewPageNumber("all")
+      }
+    }
+  }
+
+  const handleCopyPreviewContent = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setPreviewCopied(true)
+    setTimeout(() => setPreviewCopied(false), 2000)
+  }
 
   const folderInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -592,15 +623,21 @@ export function UnifiedFileSearch() {
                       const style = getBadgeStyleForType(match.documentType)
 
                       return (
-                        <Card key={match.id} className="border border-border/70 bg-card/80 hover:border-purple-500/30 transition-all rounded-2xl">
+                        <Card
+                          key={match.id}
+                          onClick={() => openDocPreview(match)}
+                          className="border border-border/70 bg-card/80 hover:border-purple-500/60 hover:shadow-lg transition-all rounded-2xl cursor-pointer group"
+                        >
                           <CardContent className="p-4 space-y-2.5">
                             <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
+                              <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                 <Badge variant="outline" className={`text-[10px] px-1.5 py-0.5 border ${style}`}>
                                   <Icon className="h-3 w-3 mr-1" />
                                   {match.extension.toUpperCase()}
                                 </Badge>
-                                <span className="font-semibold text-sm truncate">{match.documentName}</span>
+                                <span className="font-semibold text-sm truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
+                                  {match.documentName}
+                                </span>
                                 {match.pageOrSection && (
                                   <Badge variant="secondary" className="text-[10px] px-2 py-0.5 font-medium">
                                     {match.pageOrSection}
@@ -613,28 +650,33 @@ export function UnifiedFileSearch() {
                                 )}
                               </div>
 
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground rounded-lg"
-                                onClick={() => copySnippet(match.id, match.fullSnippet)}
-                              >
-                                {copiedId === match.id ? (
-                                  <>
-                                    <Check className="h-3.5 w-3.5 mr-1 text-green-500" /> Copied
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="h-3.5 w-3.5 mr-1" /> Copy
-                                  </>
-                                )}
-                              </Button>
+                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                <span className="text-xs text-purple-600 dark:text-purple-400 font-medium hidden sm:inline-flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                                  <Eye className="h-3.5 w-3.5" /> View File
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground rounded-lg"
+                                  onClick={() => copySnippet(match.id, match.fullSnippet)}
+                                >
+                                  {copiedId === match.id ? (
+                                    <>
+                                      <Check className="h-3.5 w-3.5 mr-1 text-green-500" /> Copied
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
                             </div>
 
                             {/* Snippet */}
                             <div className="p-3 rounded-xl bg-muted/60 font-mono text-xs sm:text-sm text-foreground/90 overflow-x-auto whitespace-pre-wrap leading-relaxed">
                               <span>{match.beforeContext}</span>
-                              <mark className="bg-yellow-300/40 dark:bg-yellow-500/30 text-foreground font-semibold px-1 rounded">
+                              <mark className="bg-yellow-300/60 dark:bg-yellow-500/40 text-foreground font-semibold px-1 rounded">
                                 {match.matchText}
                               </mark>
                               <span>{match.afterContext}</span>
@@ -683,23 +725,164 @@ export function UnifiedFileSearch() {
 
       {/* Document Quick Preview Modal */}
       {previewDoc && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <Card className="w-full max-w-3xl max-h-[80vh] flex flex-col bg-background border shadow-2xl rounded-3xl">
-            <div className="flex items-center justify-between p-4 border-b">
-              <div className="flex items-center gap-2 min-w-0">
-                <Badge variant="outline" className={`text-xs ${getBadgeStyleForType(previewDoc.type)}`}>
-                  {previewDoc.extension.toUpperCase()}
-                </Badge>
-                <span className="font-semibold text-base truncate">{previewDoc.name}</span>
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 animate-in fade-in-50"
+          onClick={() => setPreviewDoc(null)}
+        >
+          <Card
+            className="w-full max-w-4xl max-h-[88vh] flex flex-col bg-background border shadow-2xl rounded-3xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex flex-col gap-3 p-4 sm:p-5 border-b bg-muted/30">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Badge variant="outline" className={`text-xs ${getBadgeStyleForType(previewDoc.type)} px-2 py-0.5`}>
+                    {previewDoc.extension.toUpperCase()}
+                  </Badge>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-base sm:text-lg truncate text-foreground flex items-center gap-2">
+                      {previewDoc.name}
+                    </h3>
+                    <p className="text-xs text-muted-foreground truncate">{previewDoc.path}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs rounded-xl h-8"
+                    onClick={() => handleCopyPreviewContent(previewDoc.content)}
+                  >
+                    {previewCopied ? (
+                      <>
+                        <Check className="h-3.5 w-3.5 mr-1 text-green-500" /> Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3.5 w-3.5 mr-1" /> Copy Text
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPreviewDoc(null)}
+                    className="h-8 w-8 p-0 rounded-full hover:bg-muted"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setPreviewDoc(null)} className="h-8 w-8 p-0 rounded-full">
-                <X className="h-4 w-4" />
-              </Button>
+
+              {/* Stats & Search Inside File Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
+                  <span>{previewDoc.wordCount.toLocaleString()} words</span>
+                  <span>•</span>
+                  <span>{previewDoc.lineCount.toLocaleString()} lines</span>
+                  <span>•</span>
+                  <span>{formatFileSize(previewDoc.size)}</span>
+                  {previewDoc.pages && (
+                    <>
+                      <span>•</span>
+                      <span>{previewDoc.pages.length} page{previewDoc.pages.length === 1 ? "" : "s"}</span>
+                    </>
+                  )}
+                </div>
+
+                {/* Filter / Highlight input inside preview */}
+                <div className="relative flex items-center min-w-[200px] max-w-xs flex-1">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Highlight word in file…"
+                    value={previewFilterText}
+                    onChange={(e) => setPreviewFilterText(e.target.value)}
+                    className="w-full h-8 pl-8 pr-3 text-xs bg-background border rounded-xl focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                  {previewFilterText && (
+                    <button
+                      onClick={() => setPreviewFilterText("")}
+                      className="absolute right-2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Page / Sheet Selector (if multi-page) */}
+              {previewDoc.pages && previewDoc.pages.length > 1 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 text-xs">
+                  <button
+                    onClick={() => setPreviewPageNumber("all")}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-colors shrink-0 ${
+                      previewPageNumber === "all"
+                        ? "bg-purple-600 text-white"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    All Pages
+                  </button>
+                  {previewDoc.pages.map((p) => (
+                    <button
+                      key={p.pageNumber}
+                      onClick={() => setPreviewPageNumber(p.pageNumber)}
+                      className={`px-2.5 py-1 rounded-lg font-medium transition-colors shrink-0 ${
+                        previewPageNumber === p.pageNumber
+                          ? "bg-purple-600 text-white"
+                          : "bg-muted text-muted-foreground hover:bg-muted/80"
+                      }`}
+                    >
+                      {p.title || `Page ${p.pageNumber}`}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <CardContent className="flex-1 overflow-y-auto p-5">
-              <pre className="text-xs sm:text-sm font-mono whitespace-pre-wrap leading-relaxed text-foreground/90">
-                {previewDoc.content || "[No text content]"}
-              </pre>
+
+            {/* Modal Body Content */}
+            <CardContent className="flex-1 overflow-y-auto p-5 bg-card">
+              {(() => {
+                let textToDisplay = previewDoc.content
+                if (previewDoc.pages && previewPageNumber !== "all") {
+                  const targetPage = previewDoc.pages.find((p) => p.pageNumber === previewPageNumber)
+                  textToDisplay = targetPage ? targetPage.content : previewDoc.content
+                }
+
+                if (!textToDisplay || !textToDisplay.trim()) {
+                  return <div className="text-center py-10 text-muted-foreground text-sm">No readable text content.</div>
+                }
+
+                const filter = previewFilterText.trim()
+                if (filter) {
+                  const escaped = filter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+                  const regex = new RegExp(`(${escaped})`, "gi")
+                  const escapedText = textToDisplay
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                  const highlighted = escapedText.replace(
+                    regex,
+                    '<mark class="bg-yellow-300 dark:bg-yellow-500/50 text-foreground font-semibold px-1 rounded">$1</mark>'
+                  )
+
+                  return (
+                    <div
+                      dangerouslySetInnerHTML={{ __html: highlighted }}
+                      className="text-xs sm:text-sm font-mono whitespace-pre-wrap leading-relaxed text-foreground/90 select-text"
+                    />
+                  )
+                }
+
+                return (
+                  <pre className="text-xs sm:text-sm font-mono whitespace-pre-wrap leading-relaxed text-foreground/90 select-text">
+                    {textToDisplay}
+                  </pre>
+                )
+              })()}
             </CardContent>
           </Card>
         </div>
