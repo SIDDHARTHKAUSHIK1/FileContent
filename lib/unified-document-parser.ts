@@ -220,67 +220,84 @@ export class UnifiedDocumentParser {
   }
 
   private static reconstructPdfText(items: any[]): string {
-  if (!items || items.length === 0) return ""
+    if (!items || items.length === 0) return ""
 
-  const lines: string[] = []
-  let currentLine = ""
-  let lastY: number | null = null
-  let lastX: number | null = null
-  let lastWidth: number | null = null
+    const validItems = items.filter(
+      (item) => item && typeof item.str === "string" && (item.str.length > 0 || item.hasEOL)
+    )
+    if (validItems.length === 0) return ""
 
-  for (const item of items) {
-    if (!item || typeof item.str !== "string") continue
-    const str = item.str
-    if (!str && !item.hasEOL) continue
+    type PositionedItem = {
+      str: string
+      x: number
+      y: number
+      width: number
+      hasEOL?: boolean
+    }
 
-    const transform = item.transform
-    const currentX = transform ? transform[4] : null
-    const currentY = transform ? transform[5] : null
-
-    // Vertical shift detection for new line
-    const isNewLine = lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 3
-
-    if (isNewLine) {
-      if (currentLine.trim()) {
-        lines.push(currentLine.trim())
+    const positioned: PositionedItem[] = validItems.map((item) => {
+      const t = item.transform || [1, 0, 0, 1, 0, 0]
+      return {
+        str: item.str || "",
+        x: typeof t[4] === "number" ? t[4] : 0,
+        y: typeof t[5] === "number" ? t[5] : 0,
+        width: typeof item.width === "number" ? item.width : 0,
+        hasEOL: Boolean(item.hasEOL),
       }
-      currentLine = ""
-      lastX = null
-      lastWidth = null
-    } else if (lastX !== null && currentX !== null && lastWidth !== null) {
-      const gap = currentX - (lastX + lastWidth)
-      if (gap > 2 && !currentLine.endsWith(" ") && !str.startsWith(" ")) {
-        currentLine += " "
+    })
+
+    // Sort primarily by Y descending (top to bottom of page in PDF coords), then by X ascending (left to right)
+    positioned.sort((a, b) => {
+      const yDiff = b.y - a.y
+      if (Math.abs(yDiff) > 3.5) {
+        return yDiff
+      }
+      return a.x - b.x
+    })
+
+    const lines: string[] = []
+    let currentLine = ""
+    let currentLineY: number | null = null
+    let lastX = 0
+    let lastWidth = 0
+
+    for (const item of positioned) {
+      if (currentLineY === null) {
+        currentLineY = item.y
+        currentLine = item.str
+        lastX = item.x
+        lastWidth = item.width
+        continue
+      }
+
+      // Check if vertical coordinate differs by more than 3.5 points
+      const isNewLine = Math.abs(item.y - currentLineY) > 3.5 || item.hasEOL
+
+      if (isNewLine) {
+        if (currentLine.trim()) {
+          lines.push(currentLine.trim())
+        }
+        currentLine = item.str
+        currentLineY = item.y
+        lastX = item.x
+        lastWidth = item.width
+      } else {
+        const gap = item.x - (lastX + lastWidth)
+        if (gap > 2.5 && !currentLine.endsWith(" ") && !item.str.startsWith(" ")) {
+          currentLine += " "
+        }
+        currentLine += item.str
+        lastX = item.x
+        lastWidth = item.width
       }
     }
 
-    currentLine += str
-
-    if (item.hasEOL) {
-      if (currentLine.trim()) {
-        lines.push(currentLine.trim())
-      }
-      currentLine = ""
-      lastX = null
-      lastWidth = null
-    } else {
-      lastX = currentX
-      lastWidth = item.width || 0
+    if (currentLine.trim()) {
+      lines.push(currentLine.trim())
     }
 
-    lastY = currentY
+    return lines.join("\n").trim()
   }
-
-  if (currentLine.trim()) {
-    lines.push(currentLine.trim())
-  }
-
-  return lines
-    .join("\n")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n\s+\n/g, "\n\n")
-    .trim()
-}
 
   private static async parsePdf(file: File): Promise<{ content: string; pages: ParsedPage[] }> {
     const arrayBuffer = await file.arrayBuffer()

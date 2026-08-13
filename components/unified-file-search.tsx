@@ -105,6 +105,7 @@ export function UnifiedFileSearch() {
   const [previewDoc, setPreviewDoc] = useState<UnifiedDocument | null>(null)
   const [previewPageNumber, setPreviewPageNumber] = useState<number | "all">("all")
   const [previewFilterText, setPreviewFilterText] = useState<string>("")
+  const [previewTargetLine, setPreviewTargetLine] = useState<number | null>(null)
   const [previewCopied, setPreviewCopied] = useState<boolean>(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
@@ -115,6 +116,7 @@ export function UnifiedFileSearch() {
     if (foundDoc) {
       setPreviewDoc(foundDoc)
       setPreviewFilterText(searchQuery)
+      setPreviewTargetLine(match.lineNumber || null)
       if (match.pageOrSection) {
         const pageMatch = match.pageOrSection.match(/Page\s+(\d+)/i)
         if (pageMatch) {
@@ -844,7 +846,7 @@ export function UnifiedFileSearch() {
             </div>
 
             {/* Modal Body Content */}
-            <CardContent className="flex-1 overflow-y-auto p-5 bg-card">
+            <CardContent className="flex-1 overflow-y-auto p-0 bg-card font-mono text-xs sm:text-sm">
               {(() => {
                 let textToDisplay = previewDoc.content
                 if (previewDoc.pages && previewPageNumber !== "all") {
@@ -853,34 +855,57 @@ export function UnifiedFileSearch() {
                 }
 
                 if (!textToDisplay || !textToDisplay.trim()) {
-                  return <div className="text-center py-10 text-muted-foreground text-sm">No readable text content.</div>
+                  return <div className="text-center py-12 text-muted-foreground text-sm font-sans">No readable text content.</div>
                 }
 
+                const lines = textToDisplay.split("\n")
                 const filter = previewFilterText.trim()
-                if (filter) {
-                  const escaped = filter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-                  const regex = new RegExp(`(${escaped})`, "gi")
-                  const escapedText = textToDisplay
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;")
-                  const highlighted = escapedText.replace(
-                    regex,
-                    '<mark class="bg-yellow-300 dark:bg-yellow-500/50 text-foreground font-semibold px-1 rounded">$1</mark>'
-                  )
-
-                  return (
-                    <div
-                      dangerouslySetInnerHTML={{ __html: highlighted }}
-                      className="text-xs sm:text-sm font-mono whitespace-pre-wrap leading-relaxed text-foreground/90 select-text"
-                    />
-                  )
-                }
+                const filterRegex = filter ? new RegExp(`(${filter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "gi") : null
 
                 return (
-                  <pre className="text-xs sm:text-sm font-mono whitespace-pre-wrap leading-relaxed text-foreground/90 select-text">
-                    {textToDisplay}
-                  </pre>
+                  <div className="divide-y divide-border/20 py-2 select-text">
+                    {lines.map((line, idx) => {
+                      const lineNum = idx + 1
+                      const isTargetLine = previewTargetLine === lineNum
+                      const escapedLine = line
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+
+                      const highlightedLine = filterRegex
+                        ? escapedLine.replace(
+                            filterRegex,
+                            '<mark class="bg-yellow-300 dark:bg-yellow-500/50 text-foreground font-semibold px-1 rounded">$1</mark>'
+                          )
+                        : escapedLine
+
+                      return (
+                        <div
+                          key={idx}
+                          id={`preview-line-${lineNum}`}
+                          className={`flex items-start gap-3 px-4 py-1 hover:bg-muted/40 transition-colors ${
+                            isTargetLine
+                              ? "bg-purple-500/15 dark:bg-purple-950/40 border-l-4 border-purple-500 font-medium"
+                              : ""
+                          }`}
+                        >
+                          <span
+                            className={`w-10 text-right shrink-0 select-none text-[11px] pt-0.5 ${
+                              isTargetLine
+                                ? "text-purple-600 dark:text-purple-400 font-bold"
+                                : "text-muted-foreground/60"
+                            }`}
+                          >
+                            {lineNum}
+                          </span>
+                          <div
+                            dangerouslySetInnerHTML={{ __html: highlightedLine || "&nbsp;" }}
+                            className="flex-1 whitespace-pre-wrap leading-relaxed break-words text-foreground/90"
+                          />
+                        </div>
+                      )
+                    })}
+                  </div>
                 )
               })()}
             </CardContent>
