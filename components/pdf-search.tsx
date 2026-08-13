@@ -184,6 +184,14 @@ const PdfSearch: React.FC<PdfSearchProps> = ({ onBack }) => {
     )
     .join("\n\n");
 
+  const ragDocuments = pdfPages.map((p) => ({
+    id: `${p.fileName}-p${p.pageNumber}`,
+    name: `${p.fileName} (Page ${p.pageNumber})`,
+    path: p.fileName,
+    type: "pdf",
+    content: p.text,
+  }));
+
   // Get distinct uploaded document names
   const uniqueDocNames = Array.from(new Set(pdfPages.map((p) => p.fileName)));
   const currentDocName = uniqueDocNames[selectedDocIndex] || "";
@@ -567,7 +575,7 @@ const PdfSearch: React.FC<PdfSearchProps> = ({ onBack }) => {
           {/* TAB 2: AI SEARCH CHAT */}
           <TabsContent value="ai">
             <div className="h-[calc(100vh-280px)] min-h-[500px]">
-              <AISearchChat fileContent={allPdfContents} />
+              <AISearchChat documents={ragDocuments} hasDocuments={ragDocuments.length > 0} />
             </div>
           </TabsContent>
 
