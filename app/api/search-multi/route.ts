@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
       stats,
       debug: debugInfo.slice(0, 10),
     } as ApiResponse)
-  } catch (error) {
+  } catch (error: any) {
     console.error("Multi-file search API error:", error)
     const endTime = Date.now()
 

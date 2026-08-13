@@ -146,41 +146,26 @@ export class DocumentParser {
       let extractedText = ""
       if (typeof window !== "undefined" && typeof document !== "undefined") {
         // @ts-ignore
-        const pdfjsLib = await import("pdfjs-dist/build/pdf")
+        const pdfjsLib = await import("pdfjs-dist")
         if (pdfjsLib.GlobalWorkerOptions) {
-          pdfjsLib.GlobalWorkerOptions.workerSrc =
-            pdfjsLib.GlobalWorkerOptions.workerSrc ||
-            `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+          pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs"
         }
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+        const pdf = await pdfjsLib.getDocument({
+          data: new Uint8Array(arrayBuffer),
+          cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || "5.3.93"}/cmaps/`,
+          cMapPacked: true,
+          standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjsLib.version || "5.3.93"}/standard_fonts/`,
+        }).promise
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
           const page = await pdf.getPage(pageNum)
           const textContent = await page.getTextContent()
-          const pageText = textContent.items.map((item: any) => item.str).join(" ")
+          const pageText = textContent.items
+            .filter((item: any) => typeof item.str === "string")
+            .map((item: any) => item.str + (item.hasEOL ? "\n" : " "))
+            .join("")
           extractedText += `\n${pageText}`
-          const viewport = page.getViewport({ scale: 2.0 })
-          const canvas = document.createElement("canvas")
-          canvas.width = viewport.width
-          canvas.height = viewport.height
-          const context = canvas.getContext("2d")
-          if (!context) {
-            console.warn("Could not get 2D context for canvas. Skipping OCR for this page.")
-            continue
-          }
-          await page.render({ canvasContext: context, viewport }).promise
-          const dataUrl = canvas.toDataURL("image/png")
-          try {
-            const result = await Tesseract.recognize(dataUrl, "eng", {
-              logger: (m) => {},
-            })
-            if (result.data && result.data.text) {
-              ocrText += `\n${result.data.text}`
-            }
-          } catch (ocrErr) {
-            console.warn(`OCR failed for PDF page ${pageNum}`, ocrErr)
-          }
         }
-        text = (extractedText + (ocrText ? "\n" + ocrText : "")).trim()
+        text = extractedText.trim()
       } else {
         // SSR/server: skip PDF parsing, return placeholder
         return {
