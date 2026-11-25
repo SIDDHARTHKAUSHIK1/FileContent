@@ -1,10 +1,17 @@
 import type { RagDocumentInput, RagSource } from "@/lib/rag-types"
 
-export type AiProvider = "gemini" | "nvidia" | "openai" | "groq" | "unknown"
+export type AiProvider = "ollama" | "gemini" | "nvidia" | "openai" | "groq" | "unknown"
 
 export function detectKeyProvider(key?: string): AiProvider {
   if (!key) return "unknown"
   const clean = key.trim()
+  if (
+    clean.toLowerCase() === "ollama" ||
+    clean.toLowerCase().startsWith("ollama") ||
+    clean === "sk-ollama"
+  ) {
+    return "ollama"
+  }
   if (clean.startsWith("AIzaSy")) return "gemini"
   if (clean.startsWith("nvapi-")) return "nvidia"
   if (clean.startsWith("gsk_")) return "groq"
@@ -20,7 +27,17 @@ export function getEffectiveKey(keyOverride?: string): { key: string; provider: 
     return { key: directKey, provider: detectKeyProvider(directKey) }
   }
 
-  // Check environment variables
+  // 1. Check if Ollama / Deployed Model is configured in environment
+  const ollamaUrl =
+    process.env.OLLAMA_BASE_URL ||
+    process.env.OLLAMA_API_URL ||
+    process.env.OPENAI_BASE_URL ||
+    process.env.OPENAI_API_BASE
+  if (ollamaUrl) {
+    return { key: process.env.OPENAI_API_KEY?.trim() || "ollama", provider: "ollama" }
+  }
+
+  // 2. Check environment variables
   if (process.env.GEMINI_API_KEY) {
     return { key: process.env.GEMINI_API_KEY.trim(), provider: "gemini" }
   }
@@ -34,7 +51,8 @@ export function getEffectiveKey(keyOverride?: string): { key: string; provider: 
     return { key: process.env.OPENAI_API_KEY.trim(), provider: "openai" }
   }
 
-  return { key: "", provider: "unknown" }
+  // 3. Default to deployed Ollama VPS instance
+  return { key: "ollama", provider: "ollama" }
 }
 
 /**
@@ -182,13 +200,15 @@ export async function executeAiQuery(
 ): Promise<string> {
   const { key, provider } = getEffectiveKey(apiKeyOverride)
 
-  if (!key) {
+  if (!key && provider !== "ollama") {
     throw new Error(
       "No AI API Key provided. Please enter your Google Gemini, NVIDIA, Groq, or OpenAI API key in settings."
     )
   }
 
-  if (provider === "gemini") {
+  if (provider === "ollama") {
+    return queryOllama(prompt, key)
+  } else if (provider === "gemini") {
     return queryGoogleGemini(prompt, key)
   } else if (provider === "nvidia") {
     return queryNvidia(prompt, key)
@@ -198,7 +218,7 @@ export async function executeAiQuery(
     return queryOpenAI(prompt, key)
   }
 
-  return queryGoogleGemini(prompt, key)
+  return queryOllama(prompt, key)
 }
 
 async function queryGoogleGemini(prompt: string, apiKey: string): Promise<string> {
@@ -310,8 +330,98 @@ async function queryGroq(prompt: string, apiKey: string): Promise<string> {
   return data.choices?.[0]?.message?.content?.trim() || "No response generated."
 }
 
+async function queryOllama(prompt: string, apiKey?: string): Promise<string> {
+  const baseUrl = (
+    process.env.OPENAI_BASE_URL ||
+    process.env.OPENAI_API_BASE ||
+    (process.env.OLLAMA_BASE_URL ? `${process.env.OLLAMA_BASE_URL.replace(/\/$/, "")}/v1` : "") ||
+    (process.env.OLLAMA_API_URL ? `${process.env.OLLAMA_API_URL.replace(/\/$/, "")}/v1` : "") ||
+    "http://92.4.87.178:11434/v1"
+  ).replace(/\/$/, "")
+
+  const model = process.env.MODEL_NAME || process.env.OLLAMA_MODEL || "qwen2.5:14b"
+  const chatUrl = `${baseUrl}/chat/completions`
+
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 120_000)
+
+    const response = await fetch(chatUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey || process.env.OPENAI_API_KEY || "ollama"}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful and intelligent AI document assistant. Answer directly and concisely based on the context provided.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.2,
+        max_tokens: 2048,
+      }),
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (response.ok) {
+      const data = await response.json()
+      const content = data.choices?.[0]?.message?.content
+      if (typeof content === "string" && content.trim()) {
+        return content.trim()
+      }
+    }
+  } catch (err: any) {
+    console.warn("Ollama /v1 chat completions request failed, trying native /api/generate fallback:", err.message)
+  }
+
+  // Fallback: Native Ollama /api/generate
+  const nativeBase = baseUrl.replace(/\/v1$/, "")
+  const nativeUrl = `${nativeBase}/api/generate`
+
+  try {
+    const nativeController = new AbortController()
+    const nativeTimeoutId = setTimeout(() => nativeController.abort(), 120_000)
+
+    const nativeRes = await fetch(nativeUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        prompt,
+        stream: false,
+        options: {
+          temperature: 0.2,
+        },
+      }),
+      signal: nativeController.signal,
+    })
+
+    clearTimeout(nativeTimeoutId)
+
+    if (nativeRes.ok) {
+      const data = await nativeRes.json()
+      if (data.response && data.response.trim()) {
+        return data.response.trim()
+      }
+    }
+  } catch (nativeErr: any) {
+    throw new Error(`Ollama connection error (${nativeBase}): ${nativeErr.message}`)
+  }
+
+  throw new Error(`Failed to get response from deployed model (${model} at ${baseUrl}).`)
+}
+
 async function queryOpenAI(prompt: string, apiKey: string): Promise<string> {
-  const url = "https://api.openai.com/v1/chat/completions"
+  const baseUrl = (process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || "https://api.openai.com/v1").replace(/\/$/, "")
+  const model = process.env.OPENAI_MODEL || (baseUrl.includes("11434") ? (process.env.MODEL_NAME || "qwen2.5:14b") : "gpt-4o-mini")
+  const url = `${baseUrl}/chat/completions`
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -319,7 +429,7 @@ async function queryOpenAI(prompt: string, apiKey: string): Promise<string> {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.2,
       max_tokens: 2048,

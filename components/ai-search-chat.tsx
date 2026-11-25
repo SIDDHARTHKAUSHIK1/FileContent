@@ -283,6 +283,8 @@ export default function AISearchChat({
 
   const getProviderBadge = () => {
     switch (detectedProvider) {
+      case "ollama":
+        return <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[10px]">Qwen 2.5:14b (Ollama)</Badge>
       case "gemini":
         return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 text-[10px]">Google Gemini</Badge>
       case "nvidia":
@@ -292,7 +294,7 @@ export default function AISearchChat({
       case "groq":
         return <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300 text-[10px]">Groq</Badge>
       default:
-        return null
+        return <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 text-[10px]">Qwen 2.5:14b (Default)</Badge>
     }
   }
 
@@ -317,8 +319,14 @@ export default function AISearchChat({
               onClick={() => setShowKeyInput(!showKeyInput)}
             >
               <Key className="h-3.5 w-3.5 text-purple-500" />
-              <span>{apiKey ? "API Key Configured" : "Set API Key"}</span>
-              {apiKey && getProviderBadge()}
+              <span>
+                {apiKey
+                  ? apiKey.toLowerCase().includes("ollama")
+                    ? "Qwen 2.5:14b Active"
+                    : "Custom Key Configured"
+                  : "Qwen 2.5:14b (Default)"}
+              </span>
+              {getProviderBadge()}
             </Button>
             <Button variant="outline" size="sm" onClick={clearChat}>
               Clear
@@ -332,10 +340,10 @@ export default function AISearchChat({
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-purple-900 dark:text-purple-300 flex items-center gap-1.5">
                 <Key className="h-3.5 w-3.5 text-purple-600" />
-                Universal AI API Key Configuration
+                Universal AI & Deployed Model Settings
               </span>
               <div className="flex items-center gap-2">
-                {apiKey && getProviderBadge()}
+                {getProviderBadge()}
                 {apiKey && (
                   <span className="text-[11px] text-green-600 dark:text-green-400 flex items-center gap-1">
                     <Check className="h-3 w-3" /> Saved
@@ -343,26 +351,27 @@ export default function AISearchChat({
                 )}
               </div>
             </div>
+
+            {/* Deployed Model Banner */}
+            <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center justify-between gap-2">
+              <div>
+                <strong>Active Deployed Model:</strong> <code>qwen2.5:14b</code> on Oracle VPS (<code>http://92.4.87.178:11434</code>).
+                <div className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-0.5">
+                  Ready & resident in RAM — works out-of-the-box without extra keys.
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[10px] border-emerald-500/30 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                onClick={() => saveCustomKey("ollama")}
+              >
+                Use Deployed Model
+              </Button>
+            </div>
+
             <p className="text-[11px] text-muted-foreground leading-relaxed">
-              Enter your <strong>Google Gemini API Key</strong> (starts with <code>AIzaSy...</code>) or <strong>NVIDIA / OpenAI / Groq</strong> key.
-              Get a 100% free Gemini API key from{" "}
-              <a
-                href="https://aistudio.google.com/app/apikey"
-                target="_blank"
-                rel="noreferrer"
-                className="text-purple-600 dark:text-purple-400 underline font-medium inline-flex items-center gap-0.5"
-              >
-                Google AI Studio <ExternalLink className="h-2.5 w-2.5" />
-              </a>{" "}
-              or NVIDIA key from{" "}
-              <a
-                href="https://build.nvidia.com/"
-                target="_blank"
-                rel="noreferrer"
-                className="text-purple-600 dark:text-purple-400 underline font-medium inline-flex items-center gap-0.5"
-              >
-                build.nvidia.com <ExternalLink className="h-2.5 w-2.5" />
-              </a>.
+              To override with a third-party model, enter your <strong>Google Gemini API Key</strong> (<code>AIzaSy...</code>), <strong>NVIDIA</strong>, <strong>OpenAI</strong>, or <strong>Groq</strong> key below:
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
               <Input
@@ -387,7 +396,7 @@ export default function AISearchChat({
                     className="h-9 text-xs text-muted-foreground hover:text-destructive"
                     onClick={clearCustomKey}
                   >
-                    <RotateCcw className="h-3 w-3 mr-1" /> Reset
+                    <RotateCcw className="h-3 w-3 mr-1" /> Reset to Default
                   </Button>
                 )}
               </div>

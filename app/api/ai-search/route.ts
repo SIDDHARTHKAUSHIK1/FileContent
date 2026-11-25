@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { key, provider } = getEffectiveKey(effectiveApiKey)
-    if (!key) {
+    if (!key && provider !== "ollama") {
       return NextResponse.json(
         {
           error:
@@ -133,5 +133,46 @@ export async function POST(request: NextRequest) {
     const message =
       error instanceof Error ? error.message : "Unable to generate answer from the documents."
     return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+export async function GET() {
+  const host = (process.env.OLLAMA_BASE_URL || "http://92.4.87.178:11434").replace(/\/$/, "")
+  const model = process.env.MODEL_NAME || "qwen2.5:14b"
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 6000)
+    const res = await fetch(`${host}/api/tags`, { signal: controller.signal })
+    clearTimeout(timeout)
+
+    if (res.ok) {
+      const data = await res.json()
+      return NextResponse.json({
+        status: "connected",
+        provider: "ollama",
+        model,
+        host,
+        models: data.models?.map((m: any) => m.name) || [],
+      })
+    }
+    return NextResponse.json(
+      {
+        status: "error",
+        provider: "ollama",
+        host,
+        message: `HTTP ${res.status}`,
+      },
+      { status: 502 }
+    )
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        status: "unreachable",
+        provider: "ollama",
+        host,
+        error: err.message,
+      },
+      { status: 503 }
+    )
   }
 }
